@@ -13,8 +13,15 @@ import { hasTag, shortId } from "./tags.js";
 import { createToast } from "./toast.js";
 import { computed, nextTick, reactive, ref } from "./vue.js";
 
-/** 条目 kind → 展示用的模型名（模型已并进 kind，皮肤才有这一档）。 */
+/** 条目 kind → 接口里的模型值（模型已并进 kind，皮肤才有这一档）。 */
 const MODEL_LABELS = { "skin.steve": "steve", "skin.alex": "alex" };
+
+/** 模型值的展示名（下拉选项与各处徽标共用一份）；值仍是接口要的 steve / alex。 */
+const MODEL_TEXTS = { steve: t("Steve（经典）"), alex: t("Alex（纤细）") };
+export const MODEL_OPTIONS = Object.entries(MODEL_TEXTS).map(([value, label]) => ({ value, label }));
+
+/** 卡片那种一格宽的窄位置只放大类的「经典 / 纤细」，全名留给下拉与舞台徽标。 */
+const MODEL_SHORTS = { "skin.steve": t("经典"), "skin.alex": t("纤细") };
 
 /** 上传表单的粗分类 + 模型 → 接口要的 kind（没有「自动」这一档，模型由前端显式选定）。 */
 const kindOf = (category, model) => (category === "cape" ? "cape" : `skin.${model}`);
@@ -44,7 +51,13 @@ function forgetThumbnail(id) {
 
 export function modelLabel(item) {
   if (item.kind === "cape") return t("披风");
-  return MODEL_LABELS[item.kind];
+  return MODEL_TEXTS[MODEL_LABELS[item.kind]] ?? "";
+}
+
+/** 卡片一格的窄位置用：经典 / 纤细 / 披风。 */
+export function modelShort(item) {
+  if (item.kind === "cape") return t("披风");
+  return MODEL_SHORTS[item.kind] ?? "";
 }
 
 /** 分块转 base64：一次 apply 整个数组会爆调用栈，64×64 的图也照样分块。 */
@@ -72,8 +85,8 @@ function sameTags(a, b) {
 }
 
 /** 标签上限，与 core.MaxTagsPerAsset / core.MaxTagLength 保持一致（DESIGN.md 4.2）。 */
-const MAX_TAGS = 16;
-const MAX_TAG_LENGTH = 64;
+const MAX_TAGS = 8;
+const MAX_TAG_LENGTH = 32;
 
 function createStore() {
   const state = reactive({
@@ -85,14 +98,15 @@ function createStore() {
     player: getUser(),
     skin: null, // 当前预览的皮肤条目
     cape: null, // 当前预览的披风条目
-    capeVisible: false, // 没挑披风之前就不显示，按钮状态与画面保持一致
+    backEquipment: null, // 背面显示哪一档：cape | elytra | null（隐藏）
     equipped: { skin: null, cape: null }, // /api/me 回传的当前装备
     library: [], // 已有标签：[{ tag, count }]
     selectedTags: [], // 上传表单选中的标签
     model: "steve", // 上传表单的模型：steve | alex（披风没有模型）
     fileOver: false, // 拖拽悬停
     uploadOver: false, // 拖到「上传新皮肤」按钮上
-    pending: { file: null, name: "", size: 0, url: null, id: null, registered: null, checking: false, submitting: false, error: "" },
+    pending: { file: null, name: "", size: 0, url: null, id: null, registered: null, checking: false, submitting: false, editing: false, error: "" },
+    hover: { item: null, anchor: null }, // 卡片悬浮面板：显示放不下的那些标签
     view: { animation: "idle", paused: false, rotate: true, skinVisible: true, outerVisible: true },
     toast: { message: "", kind: "info", visible: false },
   });
@@ -129,16 +143,20 @@ function createStore() {
     return state.skin ? { texture_url: state.skin.texture_url, kind: state.skin.kind } : null;
   });
 
+  /** 背面材质的贴图（披风与鞘翅共用同一张）：挑过就带上，显示哪一档由 backEquipment 定。 */
   const stageCapeUrl = computed(() => {
     if (pendingActive.value && state.category === "cape") return state.pending.url;
-    return state.capeVisible && state.cape ? state.cape.texture_url : null;
+    return state.cape ? state.cape.texture_url : null;
   });
+
+  /** 背面显示：披风 / 鞘翅 / 隐藏（null）；一张贴图都没有时只能隐藏。 */
+  const stageBackEquipment = computed(() => (stageCapeUrl.value ? state.backEquipment : null));
 
   const stage = computed(() => {
     if (pendingActive.value) {
       return {
         live: true,
-        model: state.category === "cape" ? t("披风") : state.model,
+        model: state.category === "cape" ? t("披风") : MODEL_TEXTS[state.model] ?? state.model,
         tags: [...state.selectedTags],
         fallback: t("未添加标签"),
       };
@@ -167,7 +185,12 @@ function createStore() {
   });
 
   const paneTitle = computed(() => {
-    if (uploading.value) return state.category === "skin" ? t("上传新皮肤") : t("上传新披风");
+    if (uploading.value) {
+      if (state.pending.editing) {
+        return t("编辑{noun}", { noun: state.category === "skin" ? t("皮肤") : t("披风") });
+      }
+      return state.category === "skin" ? t("上传新皮肤") : t("上传新披风");
+    }
     const titles = {
       skin: { all: t("全部皮肤"), favorites: t("收藏的皮肤") },
       cape: { all: t("全部披风"), favorites: t("收藏的披风") },
@@ -218,6 +241,12 @@ function createStore() {
     return changed ? { label: t("保存修改"), disabled: false } : { label: t("已上传"), disabled: true };
   });
 
+  /** 编辑一条已入库的记录时才谈得上删除：只读资源不能删，删除本身也只给 admin。 */
+  const canDeletePending = computed(() => {
+    const item = state.pending.registered;
+    return Boolean(canDelete.value && item && !item.readonly);
+  });
+
   const dropText = computed(() => {
     const pending = state.pending;
     if (!pending.file) {
@@ -256,7 +285,7 @@ function createStore() {
     setToken(getToken(), me.player); // 顺手把用户信息写回 localStorage
     if (me.cape) {
       state.cape = me.cape;
-      state.capeVisible = true;
+      state.backEquipment = "cape";
     }
   }
 
@@ -299,11 +328,12 @@ function createStore() {
   }
 
   function select(item, { persist = true } = {}) {
+    // 不移除悬浮面板：鼠标还停在卡片上，选中不该把详情收走（滚列表 / 换页时才收）
     if (item.category === "skin") {
       state.skin = item;
     } else {
       state.cape = item;
-      state.capeVisible = true;
+      state.backEquipment = "cape";
       // guest 是只读身份组：只能预览，不用提示「已穿上」
       if (canWrite.value) {
         toast(t("已穿上「{name}」", { name: item.tags?.length ? item.tags.join(" · ") : shortId(item) }));
@@ -325,27 +355,49 @@ function createStore() {
     }
   }
 
+  /** @returns {Promise<boolean>} 真的删掉了才是 true（取消确认 / 报错都是 false）。 */
   async function remove(item) {
     if (!canDelete.value) {
       toastError(t("只有管理员能删除资源"));
-      return;
+      return false;
     }
-    if (!confirm(t("删除这个{noun}？", { noun: item.category === "skin" ? t("皮肤") : t("披风") }))) return;
+    if (!confirm(t("删除这个{noun}？", { noun: item.category === "skin" ? t("皮肤") : t("披风") }))) return false;
     try {
       const payload = await api(`/api/items/${item.id}`, { method: "DELETE" });
       forgetThumbnail(item.id);
       if (state.skin?.id === item.id) state.skin = null;
       if (state.cape?.id === item.id) {
         state.cape = null;
-        state.capeVisible = false;
+        state.backEquipment = null;
       }
       if (payload.stats) state.stats = payload.stats;
       await refresh();
       await loadTags();
       toast(t("已删除"));
+      return true;
     } catch (error) {
       toastError(error.message);
+      return false;
     }
+  }
+
+  /* ── 卡片悬浮面板 ────────────────────────────────────────────── */
+
+  /** 记下锚点矩形而不是元素本身：面板固定定位，不跟着列表滚动。 */
+  function hoverCard(item, event) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    state.hover.item = item;
+    state.hover.anchor = { left: rect.left, top: rect.top, bottom: rect.bottom, width: rect.width };
+  }
+
+  /** 只清自己那张：从 A 滑到 B 时，leave(A) 可能晚于 enter(B)。 */
+  function unhoverCard(item) {
+    if (state.hover.item === item) hideHover();
+  }
+
+  function hideHover() {
+    state.hover.item = null;
+    state.hover.anchor = null;
   }
 
   /* ── 列表切换 / 搜索 ─────────────────────────────────────────── */
@@ -355,6 +407,7 @@ function createStore() {
       toastError(t("当前身份组不能上传贴图"));
       return;
     }
+    hideHover();
     const leavingUpload = state.tab === "upload" && tab !== "upload";
     state.tab = tab;
     if (leavingUpload) clearPendingFile();
@@ -363,6 +416,7 @@ function createStore() {
 
   async function setCategory(category) {
     state.category = category;
+    hideHover();
     // 皮肤与披风的尺寸要求不同，换类别就把待上传的那张按新类别重验一遍
     recheckPending();
     await refresh();
@@ -473,13 +527,19 @@ function createStore() {
     pendingImage.value = null;
     Object.assign(pending, {
       file: null, name: "", size: 0, url: null, id: null,
-      registered: null, checking: false, submitting: false, error: "",
+      registered: null, checking: false, submitting: false, editing: false, error: "",
     });
     state.selectedTags = [];
     state.model = "steve";
   }
 
-  async function setPendingFile(file) {
+  /**
+   * 选中一个文件。
+   *
+   * `model` 是编辑入口用的：那条记录在库里已经存了 steve / alex，重新解码探测不该把它改掉，
+   * 所以这里允许显式指定；普通上传仍按图像自动判断（用户也可以手动改下拉）。
+   */
+  async function setPendingFile(file, { model = "" } = {}) {
     if (!file) return;
     const readToken = ++fileToken;
     // 认 PNG 头而不是 file.type：拖进来的文件不一定带对的 MIME
@@ -505,12 +565,50 @@ function createStore() {
         if (token !== imageToken) return; // 又选了别的文件：这次解码结果不再是当前那张
         pendingImage.value = image;
         // 选中文件就直接判断模型并切换下拉（用户仍可手动改）
-        if (state.category === "skin") state.model = detectModel(image);
+        if (state.category === "skin") state.model = model || detectModel(image);
       })
       .catch(() => {
         if (token !== imageToken) return;
         toastError(t("贴图读取失败"));
       });
+  }
+
+  /**
+   * 编辑入口：把库里那条记录搬进上传面板 —— 拉回贴图字节当作「刚选中的文件」，
+   * 预检按内容命中同一条 asset，于是提交走的就是「覆盖标签与 kind」那条路。
+   */
+  async function editItem(item) {
+    if (!canWrite.value) {
+      toastError(t("当前身份组不能修改资源"));
+      return;
+    }
+    if (item.readonly) {
+      toastError(t("内置资源不可修改"));
+      return;
+    }
+    let file;
+    try {
+      const response = await fetch(item.texture_url);
+      if (!response.ok) throw new Error(t("请求失败 ({status})", { status: response.status }));
+      const blob = await response.blob();
+      file = new File([blob], `${shortId(item).slice(1)}.png`, { type: "image/png" });
+    } catch (error) {
+      toastError(error.message || t("贴图读取失败"));
+      return;
+    }
+    if (!uploading.value) await setTab("upload");
+    state.category = item.category;
+    await setPendingFile(file, { model: MODEL_LABELS[item.kind] ?? "" });
+    state.pending.editing = true;
+  }
+
+  /** 编辑面板里的删除：删掉正在编辑的那条，然后回列表。 */
+  async function removePending() {
+    const item = state.pending.registered;
+    if (!item) return;
+    if (!(await remove(item))) return;
+    clearPendingFile();
+    await setTab("all");
   }
 
   /**
@@ -576,12 +674,14 @@ function createStore() {
   const toggleRotate = () => (view.rotate = !view.rotate);
   const toggleSkinVisible = () => (view.skinVisible = !view.skinVisible);
   const toggleOuterVisible = () => (view.outerVisible = !view.outerVisible);
-  const toggleCapeVisible = () => {
-    state.capeVisible = !state.capeVisible;
-    if (state.capeVisible && !state.cape && !pendingActive.value) {
+
+  /** 背面三档：披风 / 鞘翅 / 隐藏（null）；鞘翅在游戏里用的就是披风那张贴图。 */
+  function setBackEquipment(equipment) {
+    state.backEquipment = equipment;
+    if (equipment && !stageCapeUrl.value) {
       toast(t("还没选披风，去「披风」挑一张"));
     }
-  };
+  }
 
   // 退出登录就是「清 token 回登录页」，与 api.js 的 401 处理共用同一份实现
   const logout = toLogin;
@@ -593,7 +693,6 @@ function createStore() {
     role,
     canUpload,
     canWrite,
-    canDelete,
     roleLabel,
     // 派生
     uploading,
@@ -601,6 +700,7 @@ function createStore() {
     pendingKind,
     stageSkin,
     stageCapeUrl,
+    stageBackEquipment,
     stage,
     stageEmpty,
     statsText,
@@ -611,6 +711,7 @@ function createStore() {
     emptyTokens,
     submitState,
     dropText,
+    canDeletePending,
     // 动作
     toast,
     toastError,
@@ -631,6 +732,11 @@ function createStore() {
     setPendingFile,
     clearPendingFile,
     dropOnUploadTab,
+    editItem,
+    removePending,
+    hoverCard,
+    unhoverCard,
+    hideHover,
     addTag,
     removeTag,
     toggleTag,
@@ -640,7 +746,7 @@ function createStore() {
     toggleRotate,
     toggleSkinVisible,
     toggleOuterVisible,
-    toggleCapeVisible,
+    setBackEquipment,
     logout,
     // 小工具
     hasTag: (tag) => hasTag(state.selectedTags, tag),

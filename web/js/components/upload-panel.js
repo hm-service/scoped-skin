@@ -1,7 +1,7 @@
 /** 上传面板：拖拽区（sha256 预检）+ 标签 + 模型 + 提交。 */
 import { renderPreview } from "../avatar.js";
 import { t } from "../i18n.js";
-import { store } from "../store.js";
+import { MODEL_OPTIONS, store } from "../store.js";
 import { byPopularity } from "../tags.js";
 import { computed, onMounted, ref, watch } from "../vue.js";
 import { TagCombo } from "./tag-combo.js";
@@ -43,7 +43,7 @@ export const UploadPanel = {
       store.setPendingFile(event.dataTransfer?.files?.[0]);
     }
 
-    return { store, canvas, fileInput, library, pick, onFile, onDrop };
+    return { store, canvas, fileInput, library, pick, onFile, onDrop, MODEL_OPTIONS };
   },
   template: `
     <form class="uploader" novalidate @submit.prevent="store.submitUpload()">
@@ -66,16 +66,13 @@ export const UploadPanel = {
         <div class="tag-field">
           <TagCombo :selected="store.state.selectedTags" :library="store.state.library"
                     @add="store.addTag" @remove="store.removeTag"/>
-          <div class="tag-existing">
-            <span class="tag-existing-label">{{ t("已有") }}</span>
-            <div class="tag-existing-list">
-              <button v-for="entry in library" :key="entry.tag" type="button"
-                      class="tag-chip ghost" :class="{ on: store.hasTag(entry.tag) }"
-                      :data-tag="entry.tag" @click="store.toggleTag(entry.tag)">
-                <span>{{ entry.tag }}</span><span class="count">{{ entry.count }}</span>
-              </button>
-              <span v-if="!library.length" class="tag-empty">{{ t("暂无标签，直接输入创建") }}</span>
-            </div>
+          <div class="tag-existing-list">
+            <button v-for="entry in library" :key="entry.tag" type="button"
+                    class="tag-chip ghost" :class="{ on: store.hasTag(entry.tag) }"
+                    :data-tag="entry.tag" @click="store.toggleTag(entry.tag)">
+              <span>{{ entry.tag }}</span><span class="count">{{ entry.count }}</span>
+            </button>
+            <span v-if="!library.length" class="tag-empty">{{ t("暂无标签，直接输入创建") }}</span>
           </div>
         </div>
       </div>
@@ -83,14 +80,19 @@ export const UploadPanel = {
       <label v-if="store.state.category === 'skin'" class="field field-model">
         <span>{{ t("模型") }}</span>
         <select v-model="store.state.model">
-          <option value="steve">steve</option>
-          <option value="alex">alex</option>
+          <option v-for="option in MODEL_OPTIONS" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
         </select>
       </label>
 
       <div class="form-actions">
         <button type="submit" class="primary-btn" :disabled="store.submitState.disabled">
           {{ store.submitState.label }}
+        </button>
+        <button v-if="store.canDeletePending" type="button" class="ghost-btn danger"
+                @click="store.removePending()">
+          <svg class="icon"><use href="#i-trash"/></svg>{{ t("删除") }}
         </button>
       </div>
     </form>`,

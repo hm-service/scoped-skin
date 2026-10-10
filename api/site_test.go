@@ -856,7 +856,7 @@ func TestClientIPFromTrustedProxy(t *testing.T) {
 	}
 }
 
-// DESIGN.md 4.2：标签最多 16 个、单条最长 64 字符。
+// DESIGN.md 4.2：标签数量与单条长度都有上限，文案里的数字直接跟着常量走。
 func TestTagLimits(t *testing.T) {
 	instance, handler := newSite(t)
 	token := testenv.Token(t, instance, "admin")
@@ -868,10 +868,10 @@ func TestTagLimits(t *testing.T) {
 	}
 	recorder := doUpload(t, handler, token, fields, "too-many.png", png)
 	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("17 个标签状态码 = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
+		t.Fatalf("超过标签数上限的状态码 = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
 	}
-	if got := detail(t, recorder); got != "标签最多 16 个" {
-		t.Errorf("detail = %q", got)
+	if got, want := detail(t, recorder), "标签最多 "+strconv.Itoa(core.MaxTagsPerAsset)+" 个"; got != want {
+		t.Errorf("detail = %q，想要 %q", got, want)
 	}
 
 	recorder = doUpload(t, handler, token,
@@ -880,11 +880,11 @@ func TestTagLimits(t *testing.T) {
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("超长标签状态码 = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
 	}
-	if got := detail(t, recorder); got != "单个标签最长 64 个字符" {
-		t.Errorf("detail = %q", got)
+	if got, want := detail(t, recorder), "单个标签最长 "+strconv.Itoa(core.MaxTagLength)+" 个字符"; got != want {
+		t.Errorf("detail = %q，想要 %q", got, want)
 	}
 
-	// 正好 16 个 × 64 字符应当能过
+	// 正好顶到两个上限应当能过
 	fields = [][2]string{{"kind", "skin.steve"}, {"tags", strings.Repeat("长", core.MaxTagLength)}}
 	for index := 1; index < core.MaxTagsPerAsset; index++ {
 		fields = append(fields, [2]string{"tags", "标签" + strconv.Itoa(index)})

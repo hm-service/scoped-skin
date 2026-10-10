@@ -2,6 +2,7 @@
  * 主页面：根组件只负责骨架与装配，逻辑全在 store，视图全在组件。
  */
 import { requireAuth } from "./auth.js";
+import { CardHover } from "./components/card-hover.js";
 import { TopBar } from "./components/chrome.js";
 import { SkinCard } from "./components/skin-card.js";
 import { StagePane } from "./components/stage-pane.js";
@@ -14,7 +15,7 @@ import { createApp, onMounted } from "./vue.js";
 
 const App = {
   name: "App",
-  components: { TopBar, ToastBox, SkinCard, StagePane, UploadPanel, TagPanel },
+  components: { TopBar, ToastBox, SkinCard, StagePane, UploadPanel, TagPanel, CardHover },
   setup() {
     const isActive = (item) =>
       item.category === "skin"
@@ -104,11 +105,12 @@ const App = {
               </div>
 
               <div class="grid" id="grid" role="list"
-                   v-if="!store.uploading && store.state.items.length">
+                   v-if="!store.uploading && store.state.items.length"
+                   @scroll.passive="store.hideHover()">
                 <SkinCard v-for="item in store.state.items" :key="item.id" :item="item"
-                          :active="isActive(item)" :writable="store.canWrite" :deletable="store.canDelete"
+                          :active="isActive(item)" :writable="store.canWrite"
                           @select="store.select(item)"
-                          @favorite="store.toggleFavorite(item)" @remove="store.remove(item)"/>
+                          @favorite="store.toggleFavorite(item)" @edit="store.editItem(item)"/>
               </div>
 
               <p class="placeholder" v-if="!store.uploading && !store.state.items.length">
@@ -128,6 +130,7 @@ const App = {
       </main>
 
       <ToastBox :toast="store.state.toast"/>
+      <CardHover/>
     </div>`,
 };
 

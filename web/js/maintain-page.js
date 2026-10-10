@@ -26,14 +26,14 @@ const MaintainPage = {
         <span class="brand-mark" aria-hidden="true"></span>
         <span class="brand-name">{{ t("皮肤站") }}</span>
         <span class="brand-sub">Maintain</span>
-        <a class="ghost-btn" href="/">
+        <a class="back-link" href="/">
           <svg class="icon"><use href="#i-back"/></svg>{{ t("回皮肤站") }}
         </a>
-        <LocaleSwitch/>
         <span class="chip">{{ t("{count} 个账号", { count: store.state.users.length }) }}</span>
         <span v-if="store.me" class="chip chip-user" :title="'UUID ' + store.me.uuid">
           {{ store.me.player_name }} · {{ store.roleLabel(store.me.role) }}
         </span>
+        <LocaleSwitch/>
         <button class="icon-btn" type="button" :title="t('退出登录')" @click="store.logout()">
           <svg class="icon"><use href="#i-logout"/></svg>
         </button>

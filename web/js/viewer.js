@@ -27,6 +27,7 @@ export class Preview3D {
     this.paused = false;
     this.skinVisible = true;
     this.outerVisible = true;
+    this.backEquipment = null; // cape | elytra | null
 
     this.viewer = new skinview3d.SkinViewer({
       canvas,
@@ -128,15 +129,37 @@ export class Preview3D {
     this.viewer.playerObject.skin.setOuterLayerVisible(visible);
   }
 
-  /** @param {string|null} url */
+  /**
+   * 载入背面贴图。披风与鞘翅共用这一张（游戏里鞘翅用的就是披风材质），
+   * 到底显示哪一档交给 setBackEquipment —— 所以这里用 makeVisible: false 挡住 vendor 的默认切换。
+   *
+   * @param {string|null} url
+   */
   setCape(url) {
     if (!url) {
-      this.viewer.loadCape(null);
+      this.viewer.loadCape(null); // resetCape：连同 backEquipment 一起清掉
       return Promise.resolve();
     }
-    return this.viewer.loadCape(url).catch(() => {
-      this.onError(t("披风贴图加载失败"));
-    });
+    return this.viewer
+      .loadCape(url, { makeVisible: false })
+      .then(() => this.setBackEquipment(this.backEquipment))
+      .catch(() => {
+        this.onError(t("披风贴图加载失败"));
+      });
+  }
+
+  /** @param {"cape"|"elytra"|null} equipment */
+  setBackEquipment(equipment) {
+    this.backEquipment = equipment ?? null;
+    this.viewer.playerObject.backEquipment = this.backEquipment;
+  }
+
+  applyLayers() {
+    const skin = this.viewer.playerObject.skin;
+    skin.visible = this.skinVisible;
+    skin.setOuterLayerVisible(this.outerVisible);
+    // loadSkin 只碰皮肤自己，但换装时重新对齐一次背面状态，省得依赖 vendor 的副作用
+    this.viewer.playerObject.backEquipment = this.backEquipment;
   }
 
   setAnimation(key) {

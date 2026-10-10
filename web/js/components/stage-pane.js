@@ -31,6 +31,7 @@ export const StagePane = {
       preview.setAutoRotate(store.state.view.rotate);
       preview.setSkinVisible(store.state.view.skinVisible);
       preview.setOuterLayerVisible(store.state.view.outerVisible);
+      preview.setBackEquipment(store.stageBackEquipment);
     });
 
     onBeforeUnmount(() => {
@@ -39,6 +40,7 @@ export const StagePane = {
 
     watch(() => [store.stageSkin?.texture_url, store.stageSkin?.kind], loadSkin);
     watch(() => store.stageCapeUrl, loadCape);
+    watch(() => store.stageBackEquipment, (equipment) => viewerRef.current?.setBackEquipment(equipment));
     watch(() => store.state.view.animation, (key) => viewerRef.current?.setAnimation(key));
     watch(() => store.state.view.paused, (paused) => viewerRef.current?.setPaused(paused));
     watch(() => store.state.view.rotate, (rotate) => viewerRef.current?.setAutoRotate(rotate));
@@ -91,10 +93,24 @@ export const StagePane = {
                 :title="t('显示 / 隐藏外层')" @click="store.toggleOuterVisible()">
           <svg class="icon"><use href="#i-layers"/></svg>{{ t("外层") }}
         </button>
-        <button class="ghost-btn" :class="{ on: store.state.capeVisible }"
-                :title="t('显示 / 隐藏披风')" @click="store.toggleCapeVisible()">
-          <svg class="icon"><use href="#i-cape"/></svg>{{ t("披风") }}
-        </button>
+        <!-- 背面三档：披风 / 鞘翅 / 隐藏（游戏里鞘翅用的就是披风那张材质） -->
+        <div class="seg seg-back" :aria-label="t('背面装备')">
+          <button :class="{ on: store.state.backEquipment === 'cape' }" :title="t('披风')"
+                  :aria-label="t('披风')" :aria-pressed="String(store.state.backEquipment === 'cape')"
+                  @click="store.setBackEquipment('cape')">
+            <svg class="icon"><use href="#i-cape"/></svg>
+          </button>
+          <button :class="{ on: store.state.backEquipment === 'elytra' }" :title="t('鞘翅')"
+                  :aria-label="t('鞘翅')" :aria-pressed="String(store.state.backEquipment === 'elytra')"
+                  @click="store.setBackEquipment('elytra')">
+            <svg class="icon"><use href="#i-elytra"/></svg>
+          </button>
+          <button :class="{ on: store.state.backEquipment === null }" :title="t('隐藏')"
+                  :aria-label="t('隐藏')" :aria-pressed="String(store.state.backEquipment === null)"
+                  @click="store.setBackEquipment(null)">
+            <svg class="icon"><use href="#i-eye-off"/></svg>
+          </button>
+        </div>
         <button class="ghost-btn" :class="{ on: store.state.view.paused }"
                 :title="t('暂停 / 继续')" @click="store.togglePaused()">
           <svg class="icon"><use :href="store.state.view.paused ? '#i-play' : '#i-pause'"/></svg>{{ store.state.view.paused ? t('继续') : t('暂停') }}

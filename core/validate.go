@@ -25,9 +25,10 @@ const (
 	MinPasswordLength = 8
 
 	// DESIGN.md 4.2：贴图用标签代替自由命名（库里已有的标签即词表，也可随时手动输入），
-	// 但数量与单条长度都要有上限，否则标签栏就能拿来塞存储。
-	MaxTagsPerAsset = 16
-	MaxTagLength    = 64
+	// 但数量与单条长度都要有上限，否则标签栏就能拿来塞存储。上限按「一屏看得完」定：
+	// 卡片上只放得下前几个，其余的进悬浮面板，8 个是列表与筛选都还舒服的量级。
+	MaxTagsPerAsset = 8
+	MaxTagLength    = 32
 )
 
 // Kinds / Categories / Roles 是 DESIGN.md 4.2 与 5.1 的枚举量。

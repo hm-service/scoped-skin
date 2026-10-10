@@ -91,6 +91,22 @@ button { cursor: pointer; }
 .brand-name { font-size: 18px; font-weight: 700; letter-spacing: .04em; }
 .brand-sub { font-size: 11.5px; color: var(--ink-faint); letter-spacing: .14em; text-transform: uppercase; }
 
+/* 维护页的「回皮肤站」：一条安静的返回链接，别跟品牌和右侧按钮抢注意力 */
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 2px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  text-decoration: none;
+  transition: background .15s, color .15s;
+}
+.back-link .icon { width: 14px; height: 14px; }
+.back-link:hover { background: var(--paper-sunk); color: var(--accent-ink); }
+
 .chip-user { margin-left: 8px; }
 
 .chip {
@@ -301,12 +317,19 @@ button { cursor: pointer; }
 .tag-panel-list { display: flex; flex-wrap: wrap; gap: 6px; }
 
 .grid {
+  /* 标准卡片宽 123px（就是截图里那个视觉尺寸）作为轨迹下限：网格宽度富余时列先「适度增宽」，
+     宽到能再放下一张卡就加一列 —— 列数不设上限。用下限而不是固定值，
+     是为了卡片永远不会掉到标准宽以下（固定 minmax(118px,1fr) 时，网格越宽列越多、
+     每列反而越贴下限）。 */
+  --grid-card: 123px;
+  --grid-gap: 9px;
+
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
-  gap: 9px;
+  grid-template-columns: repeat(auto-fill, minmax(var(--grid-card), 1fr));
+  gap: var(--grid-gap);
   padding: 2px;
   align-content: start;
   scrollbar-width: thin;
@@ -318,11 +341,16 @@ button { cursor: pointer; }
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 9px 7px 8px;
+  /* 上边留宽一点：正面视图是从贴图顶端开始画的，9px 会让脑袋快贴到卡片边 */
+  padding: 16px 7px 8px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--paper);
   transition: transform .15s, border-color .15s, box-shadow .15s;
+  /* 高度必须恒定（缩略图 + 两行标签 + 一行信息）：屏外卡片不进渲染树，
+     恒定高度才让 contain-intrinsic-size 的估算准确、滚动条不抖 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 212px;
 }
 .card:hover { transform: translateY(-2px); border-color: var(--line-strong); box-shadow: var(--shadow-pop); }
 .card.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
@@ -341,11 +369,40 @@ button { cursor: pointer; }
 }
 .card.cape .thumb { height: 98px; align-items: center; }
 
-.card .meta { font-size: 11px; color: var(--ink-faint); }
+/* 标签区固定两行：卡片上最多四个 chip（超过就换成 +N），剩下的进悬浮面板。
+   width: 100% 是必须的：否则这个 wrap 容器会缩到内容宽度，百分比上限跟着缩，
+   两个短标签也会被截成「官…」。 */
+.card .tags {
+  width: 100%;
+  justify-content: center;
+  align-content: flex-start;
+  height: 46px;
+  overflow: hidden;
+}
+.card .tags .tag { max-width: 48%; overflow: hidden; text-overflow: ellipsis; }
+.card .tag-more {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--paper-soft);
+  color: var(--ink-faint);
+  font-size: 10.5px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.card .meta {
+  max-width: 100%;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .card .tags { justify-content: center; }
 
-.fav-btn, .del-btn {
+.fav-btn, .edit-btn {
   position: absolute;
   top: 5px;
   width: 24px;
@@ -360,14 +417,18 @@ button { cursor: pointer; }
   transition: all .15s;
 }
 .fav-btn { right: 5px; }
-.del-btn { left: 5px; opacity: 0; color: var(--ink-faint); }
-.card:hover .del-btn { opacity: 1; }
+.edit-btn { left: 5px; opacity: 0; color: var(--ink-faint); }
+.card:hover .edit-btn { opacity: 1; }
 .fav-btn .icon { width: 15px; height: 15px; }
-.del-btn .icon { width: 15px; height: 15px; }
+.edit-btn .icon { width: 15px; height: 15px; }
 .fav-btn:hover { background: #fff6e0; color: var(--warn); border-color: #f6e2b4; }
 .fav-btn.on { color: var(--warn); }
 .fav-btn.on .icon { fill: currentColor; }
-.del-btn:hover { background: #fdecec; color: var(--danger); border-color: #f7d4d5; }
+.edit-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
 
 .tags {
   display: flex;
@@ -415,6 +476,33 @@ button { cursor: pointer; }
   letter-spacing: .04em;
 }
 .card.builtin:hover .builtin-flag { background: var(--accent-soft); color: var(--accent-ink); }
+.card.cape { contain-intrinsic-size: auto 198px; }
+
+/* 卡片放不下的标签在悬浮面板里补全（固定定位，不会被列表的滚动容器裁掉） */
+.card-hover {
+  position: fixed;
+  z-index: 45;
+  width: 236px;
+  max-height: 216px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  box-shadow: var(--shadow-pop);
+  visibility: hidden;   /* place() 量完尺寸再显示，免得先闪在左上角 */
+  pointer-events: none; /* 别跟卡片自己的 hover 抢鼠标 */
+}
+.card-hover .tags { gap: 5px; }
+.card-hover-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 9px 0 0;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.card-hover-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 .placeholder {
   flex: 1 1 auto;
@@ -577,13 +665,12 @@ button { cursor: pointer; }
 .sug-item.create .icon { width: 13px; height: 13px; }
 .sug-empty { padding: 8px; color: var(--ink-faint); font-size: 12.5px; }
 
-.tag-existing { display: flex; gap: 8px; align-items: flex-start; }
-.tag-existing-label { flex: 0 0 auto; padding-top: 4px; font-size: 11.5px; color: var(--ink-faint); }
+/* 已有标签：随内容自动撑高，最多约 8 行，再多就自己滚 */
 .tag-existing-list {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
-  max-height: 72px;
+  max-height: 232px;
   overflow-y: auto;
   scrollbar-width: thin;
 }
@@ -635,6 +722,8 @@ button { cursor: pointer; }
 }
 .ghost-btn:hover { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
 .ghost-btn.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+.ghost-btn.danger { color: var(--danger); border-color: #f7d4d5; }
+.ghost-btn.danger:hover { border-color: var(--danger); color: var(--danger); background: #fdecec; }
 
 /* ── 右侧：3D 舞台 ─────────────────────────────────────────────── */
 
@@ -739,6 +828,10 @@ button { cursor: pointer; }
 }
 .seg button:hover { color: var(--ink); }
 .seg button.on { background: var(--paper); color: var(--accent-ink); font-weight: 600; box-shadow: var(--shadow-card); }
+
+/* 背面三档：披风 / 鞘翅 / 隐藏（只有图标，靠 title 与高亮表示当前档） */
+.seg-back button { display: grid; place-items: center; padding: 5px 8px; }
+.seg-back .icon { width: 15px; height: 15px; }
 
 .stage-foot #btnSkin { margin-left: auto; }
 
@@ -950,21 +1043,26 @@ button { cursor: pointer; }
 
 .placeholder b { color: var(--ink-soft); font-weight: 600; }
 
-/* 语言切换：顶栏 / 维护页 / 登录页上的小胶囊 */
+/* 语言切换：跟顶栏那排 icon-btn 同规格（同一行里不要两种方圆） */
 .locale-switch {
-  padding: 4px 10px;
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 9px;
   background: var(--paper);
   color: var(--ink-soft);
   font: inherit;
   font-size: 11.5px;
   font-weight: 600;
-  letter-spacing: .06em;
+  letter-spacing: .04em;
   cursor: pointer;
+  transition: all .15s;
 }
 
-.locale-switch:hover { color: var(--ink); border-color: var(--line-strong); }
+.locale-switch:hover { border-color: var(--accent); color: var(--accent-ink); }
 
 /* 英文下 rail 按钮显示 Skin / Cape（字典里是小写，句子里要用小写名词） */
 .rail-btn { text-transform: capitalize; }
