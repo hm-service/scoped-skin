@@ -11,6 +11,8 @@
 
 三个页面：`/` 皮肤库、`/auth` 登录、`/maintain` 管理员维护（不开放注册；非管理员只会看到「需要管理员身份」；最后一个管理员不可删除或降级）。
 
+`guest` 是只读身份组：不能上传、收藏或换装（见 [DESIGN.md 5.1](DESIGN.md#51-身份组)）。
+
 ![上传皮肤](docs/screenshot-upload.png)
 
 ![用户管理](docs/screenshot-maintain.png)
@@ -31,7 +33,7 @@ make build                                 # 或编译单文件二进制：./sco
 `make run` 等价于 `DATA_DIR=./data ADMIN_PASSWORD=devpass123 go run .`。生产不设 `ADMIN_PASSWORD`：首次启动会随机生成管理员密码，并把明文写进启动日志（仅此一次）：
 
 ```json
-{"level":"WARN","msg":"首次启动：已生成管理员账号，请登录后尽快在 /maintain 里改掉密码","username":"admin","password":"…"}
+{"level":"WARN","msg":"first start: generated admin account","username":"admin","password":"…"}
 ```
 
 首次启动只做两件事：灌入内置资源、建一个管理员账号；**账号表非空时启动不再改动它**（改过的密码与账号名原样保留）。清空重来即删除整个 `DATA_DIR` 再启动。全部环境变量见 [DESIGN.md 1.1](DESIGN.md#11-环境变量)。

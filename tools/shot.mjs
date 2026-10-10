@@ -25,9 +25,7 @@ const syncSleep = (ms) => {
   try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch { /* ignore */ }
 };
 
-/* ------------------------------------------------------------------ */
 /* CLI parsing                                                         */
-/* ------------------------------------------------------------------ */
 
 const USAGE = `Usage: node tools/shot.mjs --url <url> --out <png path> [options]
 
@@ -131,9 +129,7 @@ function parseArgs(argv) {
   return o;
 }
 
-/* ------------------------------------------------------------------ */
 /* CDP client                                                          */
-/* ------------------------------------------------------------------ */
 
 class CDP {
   constructor(ws) {
@@ -209,9 +205,7 @@ class CDP {
   }
 }
 
-/* ------------------------------------------------------------------ */
 /* Chrome lifecycle                                                    */
-/* ------------------------------------------------------------------ */
 
 function freePort() {
   return new Promise((res, rej) => {
@@ -327,9 +321,7 @@ async function findPageSession(cdp, log) {
   throw new Error('could not attach to a page target');
 }
 
-/* ------------------------------------------------------------------ */
 /* Input helpers                                                       */
-/* ------------------------------------------------------------------ */
 
 const NAMED_KEYS = {
   Escape: { key: 'Escape', code: 'Escape', vk: 27 },
@@ -450,9 +442,7 @@ async function flushFrames(cdp, timeoutMs = 400) {
   }
 }
 
-/* ------------------------------------------------------------------ */
 /* Page helpers                                                        */
-/* ------------------------------------------------------------------ */
 
 async function evaluate(cdp, expression, { awaitPromise = true } = {}) {
   return cdp.send('Runtime.evaluate', {
@@ -500,9 +490,7 @@ function formatRemoteObject(obj) {
   return obj.description || obj.type;
 }
 
-/* ------------------------------------------------------------------ */
 /* Main                                                                */
-/* ------------------------------------------------------------------ */
 
 let activeCleanup = null;
 let syncCleanup = null;
@@ -556,7 +544,6 @@ async function main() {
   activeCleanup = cleanup;
   syncCleanup = () => {
     if (!proc || proc.exitCode !== null || proc.killed) {
-      // still make sure the profile is gone
       try { rmSync(userDataDir, { recursive: true, force: true }); } catch { /* ignore */ }
       return;
     }

@@ -1,5 +1,5 @@
 // Package db 是 SQLite 存储层：单库、无外键约束，一致性由代码保证（DESIGN.md 4）。
-// asset 里 is_builtin = 1 的是随包发行的官方默认皮肤（用户不能编辑 / 删除）。
+// asset 里 readonly = 1 的是随包发行的官方默认皮肤（用户不能编辑 / 删除）。
 package db
 
 import (
@@ -31,9 +31,8 @@ CREATE TABLE IF NOT EXISTS user (
 CREATE TABLE IF NOT EXISTS asset (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     asset_id   TEXT NOT NULL UNIQUE,   -- 资源 ID，实则为文件数据的 sha256
-    category   TEXT NOT NULL,          -- skin / cape
-    model_type TEXT NOT NULL,          -- share / steve / alex（cape 固定 share）
-    is_builtin INTEGER NOT NULL,       -- 1 = 内置资源（用户无法编辑）
+    kind       TEXT NOT NULL,          -- skin.steve / skin.alex / cape
+    readonly   INTEGER NOT NULL,       -- 1 = 只读资源（用户无法编辑）
     upload_at  INTEGER NOT NULL,       -- UNIX 秒级时间戳
     tags       TEXT NOT NULL,          -- json 字符串列表
     data       BLOB NOT NULL
@@ -46,14 +45,14 @@ CREATE TABLE IF NOT EXISTS favorite (
 );
 
 -- asset 上不建索引（DESIGN.md 4.2）：库就那么大，列表查询本来就要全表扫一遍再按
--- upload_at 排序，按 category / model_type 建索引既省不下多少，还白搭写放大。
+-- upload_at 排序，按 kind 建索引既省不下多少，还白搭写放大。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_favorite_player_asset ON favorite (player, asset);
 `
 
 // expected 是期望的列集合；启动时校验，不一致就直接重建（原型不做迁移）。
 var expected = map[string][]string{
 	"user":     {"id", "uuid", "role", "player_name", "username", "password_hash", "skin", "cape"},
-	"asset":    {"id", "asset_id", "category", "model_type", "is_builtin", "upload_at", "tags", "data"},
+	"asset":    {"id", "asset_id", "kind", "readonly", "upload_at", "tags", "data"},
 	"favorite": {"id", "player", "asset"},
 }
 
@@ -97,7 +96,6 @@ func Open(path string) (*Store, error) {
 	return store, nil
 }
 
-// createPrivateFile 把库文件按 0600 建出来；已存在就只收紧权限。
 func createPrivateFile(path string) error {
 	handle, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, core.SecretPerm)
 	if err != nil {
@@ -109,11 +107,8 @@ func createPrivateFile(path string) error {
 	return core.TightenPerm(path, core.SecretPerm)
 }
 
-// Close 关掉数据库连接。
 func (s *Store) Close() error { return s.db.Close() }
 
-// Ready 是 /readyz 的探针：__probe 建得出来又删得掉，就说明库可读可写。
-//
 // 探针表不在 DESIGN.md 的三张表里、schema 校验也不看它，所以不会干扰业务。
 func (s *Store) Ready() error {
 	s.mu.Lock()
@@ -142,7 +137,7 @@ func (s *Store) migrate() error {
 		if slices.Compare(slices.Sorted(slices.Values(actual)), slices.Sorted(slices.Values(columns))) == 0 {
 			continue
 		}
-		slog.Warn("表结构与 DESIGN.md 不一致，重建数据库", slog.String("table", table))
+		slog.Warn("schema differs from DESIGN.md, rebuilding database", slog.String("table", table))
 		for _, name := range []string{"favorite", "asset", "user"} {
 			if _, err := s.db.Exec("DROP TABLE IF EXISTS " + name); err != nil {
 				return err

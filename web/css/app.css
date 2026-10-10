@@ -329,7 +329,6 @@ button { cursor: pointer; }
 .fav-btn.on .icon { fill: currentColor; }
 .del-btn:hover { background: #fdecec; color: var(--danger); border-color: #f7d4d5; }
 
-/* 标签 capsule */
 .tags {
   display: flex;
   flex-wrap: wrap;
@@ -876,7 +875,6 @@ button { cursor: pointer; }
 .m-denied p { margin: 0 0 16px; color: var(--ink-soft); font-size: 13px; }
 .m-denied .primary-btn { display: inline-block; text-decoration: none; }
 
-/* 编辑用户的弹层 */
 .modal-layer {
   position: fixed;
   inset: 0;
@@ -905,7 +903,6 @@ button { cursor: pointer; }
 .m-form { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 16px; }
 .m-form .field { flex-direction: column; align-items: stretch; gap: 5px; }
 .m-form .field input, .m-form .field select { width: 100%; }
-.m-hint { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--ink-faint); }
 
 @media (max-width: 720px) {
   .m-table th:nth-child(3), .m-table td:nth-child(3) { display: none; }

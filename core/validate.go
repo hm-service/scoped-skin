@@ -29,14 +29,40 @@ const (
 	MaxTagLength    = 64
 )
 
-// Models / Roles 是 DESIGN.md 4.2 与 5.1 的枚举量。
+// Kinds / Categories / Roles 是 DESIGN.md 4.2 与 5.1 的枚举量。
+//
+// `kind` 是库里存的那一列，把「是皮肤还是披风」与「皮肤的模型」合成一个值；
+// `category` 是由它推出的粗分类（皮肤 / 披风），列表筛选与页面顶部的分类选择器用它。
 var (
-	Models = []string{"share", "steve", "alex"}
-	Roles  = []string{"admin", "normal", "guest"}
+	Kinds      = []string{"skin.steve", "skin.alex", "cape"}
+	Categories = []string{"skin", "cape"}
+	Roles      = []string{"admin", "normal", "guest"}
 )
 
-// CapeModel：DESIGN.md 4.2「当 category 为 cape 时，model_type 应取 share」。
-const CapeModel = "share"
+func CategoryOf(kind string) string {
+	if strings.HasPrefix(kind, "skin") {
+		return "skin"
+	}
+	return "cape"
+}
+
+func KindsOf(category string) []string {
+	if category == "cape" {
+		return []string{"cape"}
+	}
+	return []string{"skin.steve", "skin.alex"}
+}
+
+// NormalizeKind 只接受 DESIGN.md 4.2 里那几个枚举值。
+func NormalizeKind(value string) (string, error) {
+	cleaned := strings.ToLower(strings.TrimSpace(value))
+	for _, known := range Kinds {
+		if cleaned == known {
+			return cleaned, nil
+		}
+	}
+	return "", invalid("valid.kind", strings.Join(Kinds, " / "))
+}
 
 // DESIGN.md 5.2：只接受默认尺寸的贴图 —— 皮肤 64×64、披风 64×32（宽 64、高 32）。
 // 只支持默认尺寸（不收 HD 贴图）顺带也就堵掉了「IHDR 里声明一个巨大尺寸」这类
@@ -47,7 +73,6 @@ const (
 	CapeHeight = 32
 )
 
-// DefaultRole 是新建账号的默认身份组。
 const DefaultRole = "normal"
 
 var (
@@ -87,7 +112,6 @@ func NormalizeUUID(value string) (string, error) {
 	return cleaned, nil
 }
 
-// NormalizeUsername 账号登录名：非空、不超过 32 字符、不含空白。
 func NormalizeUsername(value string) (string, error) {
 	cleaned := strings.TrimSpace(value)
 	if cleaned == "" {
@@ -111,7 +135,6 @@ func NormalizePlayerName(value string) (string, error) {
 	return cleaned, nil
 }
 
-// NormalizeRole 身份组：admin / normal / guest。
 func NormalizeRole(value string) (string, error) {
 	cleaned := strings.ToLower(strings.TrimSpace(value))
 	for _, role := range Roles {
@@ -122,7 +145,6 @@ func NormalizeRole(value string) (string, error) {
 	return "", invalid("valid.role", strings.Join(Roles, " / "))
 }
 
-// NormalizePassword 密码：非空、至少 8 个字符、不超过 256 字符。
 func NormalizePassword(value string) (string, error) {
 	if value == "" {
 		return "", invalid("valid.password.empty")
@@ -135,7 +157,6 @@ func NormalizePassword(value string) (string, error) {
 	return value, nil
 }
 
-// NormalizeTags 压掉多余空白 + 大小写不敏感去重，并校验数量与单条长度上限。
 func NormalizeTags(tags []string) ([]string, error) {
 	result := cleanTags(tags)
 	if len(result) > MaxTagsPerAsset {
@@ -166,7 +187,6 @@ func CleanTags(tags []string) []string {
 	return kept
 }
 
-// cleanTags 只做规整：压空白 + 大小写不敏感去重。
 func cleanTags(tags []string) []string {
 	result := make([]string, 0, len(tags))
 	seen := make(map[string]bool, len(tags))
@@ -185,30 +205,6 @@ func cleanTags(tags []string) []string {
 	return result
 }
 
-// NormalizeModel category 为 cape 时固定 share；皮肤接受 share / steve / alex，
-// 认几个别名，剩下的一律当作 share（交给客户端自己判断模型）。
-func NormalizeModel(category, model string) string {
-	if category == "cape" {
-		return CapeModel
-	}
-	value := strings.ToLower(strings.TrimSpace(model))
-	switch value {
-	case "classic", "default":
-		value = "steve"
-	case "slim":
-		value = "alex"
-	case "auto-detect":
-		value = "share"
-	}
-	for _, known := range Models {
-		if value == known {
-			return value
-		}
-	}
-	return "share"
-}
-
-// SplitQuery 把搜索串按空白切成标签（大小写不敏感，去重）。
 func SplitQuery(query string) []string {
 	tokens := []string{}
 	seen := map[string]bool{}
@@ -245,12 +241,10 @@ func HeaderSize(header []byte) (int, int) {
 	return int(binary.BigEndian.Uint32(header[16:20])), int(binary.BigEndian.Uint32(header[20:24]))
 }
 
-// ValidateTexture 校验贴图并返回尺寸。
-//
 // DESIGN.md「资源信任边界」：上传只校验 PNG 头、尺寸与「能不能真的解码」，不做内容审核。
 // 尺寸收得很紧：皮肤必须正好 64×64，披风必须正好 64×32，HD 贴图一律拒绝。
-func ValidateTexture(category string, data []byte) (int, int, error) {
-	_, width, height, err := decodeTexture(category, data)
+func ValidateTexture(kind string, data []byte) (int, int, error) {
+	_, width, height, err := decodeTexture(kind, data)
 	return width, height, err
 }
 
@@ -260,8 +254,8 @@ func ValidateTexture(category string, data []byte) (int, int, error) {
 // 「上传文件本身的 sha256」。这么做的理由是规范要求的那句「除去其中任何与位图无关的数据」：
 // Go 的 PNG 编码器不写任何辅助 chunk（gAMA / tIME / tEXt … 全没了），像素一个不动，而且
 // 是个不动点（同一张图解码重编两轮字节相同），所以 asset_id 稳定、可去重。
-func NormalizeTexture(category string, data []byte) ([]byte, int, int, error) {
-	img, width, height, err := decodeTexture(category, data)
+func NormalizeTexture(kind string, data []byte) ([]byte, int, int, error) {
+	img, width, height, err := decodeTexture(kind, data)
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -272,13 +266,11 @@ func NormalizeTexture(category string, data []byte) ([]byte, int, int, error) {
 	return out.Bytes(), width, height, nil
 }
 
-// decodeTexture 是校验的实际实现：头部 + 尺寸规则 + 真解一遍。
-//
 // 头部看完还要真解：只信 IHDR 的话，一段伪造的头部后面跟一堆垃圾字节也能进库、再原样分发
 // 给客户端；解码这一步把「声明自己 64×64 但其实不是图片」的输入挡在门外。
-func decodeTexture(category string, data []byte) (image.Image, int, int, error) {
-	if category != "skin" && category != "cape" {
-		return nil, 0, 0, invalid("texture.category", category)
+func decodeTexture(kind string, data []byte) (image.Image, int, int, error) {
+	if _, err := NormalizeKind(kind); err != nil {
+		return nil, 0, 0, err
 	}
 	if len(data) > MaxUploadBytes {
 		return nil, 0, 0, invalid("upload.too-big")
@@ -290,10 +282,10 @@ func decodeTexture(category string, data []byte) (image.Image, int, int, error) 
 	if width <= 0 || height <= 0 {
 		return nil, 0, 0, invalid("texture.size")
 	}
-	if category == "skin" && (width != SkinSize || height != SkinSize) {
+	if CategoryOf(kind) == "skin" && (width != SkinSize || height != SkinSize) {
 		return nil, 0, 0, invalid("texture.skin")
 	}
-	if category == "cape" && (width != CapeWidth || height != CapeHeight) {
+	if kind == "cape" && (width != CapeWidth || height != CapeHeight) {
 		return nil, 0, 0, invalid("texture.cape")
 	}
 	img, err := png.Decode(bytes.NewReader(data))

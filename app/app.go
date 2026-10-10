@@ -29,7 +29,6 @@ const DefaultAdminUsername = "admin"
 // 每次校验吃 19 MiB，不限并发就等于把内存交给对方。
 var ArgonConcurrency = 4
 
-// Config 是启动参数。
 type Config struct {
 	DataDir   string
 	Version   string
@@ -78,28 +77,28 @@ func Open(cfg Config) (*App, error) {
 
 	store, err := db.Open(filepath.Join(cfg.DataDir, "app.db"))
 	if err != nil {
-		return nil, fmt.Errorf("打开数据库失败: %w", err)
+		return nil, fmt.Errorf("open database: %w", err)
 	}
 	if err := ensureAdmin(store, cfg.AdminUsername, cfg.AdminPassword); err != nil {
 		store.Close()
-		return nil, fmt.Errorf("初始化管理员账号失败: %w", err)
+		return nil, fmt.Errorf("initialize admin account: %w", err)
 	}
 	if cfg.BuiltinFS != nil {
 		if err := store.EnsureBuiltins(cfg.BuiltinFS); err != nil {
 			store.Close()
-			return nil, fmt.Errorf("初始化内置资源失败: %w", err)
+			return nil, fmt.Errorf("install builtin textures: %w", err)
 		}
 	}
 	keys, err := core.LoadSigningKeys(cfg.DataDir)
 	if err != nil {
 		store.Close()
-		return nil, fmt.Errorf("加载签名密钥失败: %w", err)
+		return nil, fmt.Errorf("load signing key: %w", err)
 	}
 
 	tokens, err := core.NewTokenStore()
 	if err != nil {
 		store.Close()
-		return nil, fmt.Errorf("初始化令牌表失败: %w", err)
+		return nil, fmt.Errorf("initialize token table: %w", err)
 	}
 
 	concurrency := ArgonConcurrency
@@ -156,10 +155,10 @@ func ensureAdmin(store *db.Store, username, password string) error {
 		return err
 	}
 	if generated {
-		slog.Warn("首次启动：已生成管理员账号，请登录后尽快在 /maintain 里改掉密码",
+		slog.Warn("first start: generated admin account",
 			slog.String("username", username), slog.String("password", password))
 	} else {
-		slog.Info("首次启动：已按 ADMIN_PASSWORD 创建管理员账号", slog.String("username", username))
+		slog.Info("first start: created admin account from ADMIN_PASSWORD", slog.String("username", username))
 	}
 	return nil
 }
@@ -246,10 +245,10 @@ func (a *App) VerifyCredentials(username, password string) *db.User {
 // DATA_DIR 与其中的文件权限已收紧，三条都满足才算就绪。
 func (a *App) Ready() error {
 	if err := a.Store.Ready(); err != nil {
-		return fmt.Errorf("数据库不可读写: %w", err)
+		return fmt.Errorf("database not readable/writable: %w", err)
 	}
 	if a.Keys == nil || a.Keys.PublicPEM() == "" {
-		return fmt.Errorf("签名密钥未就绪")
+		return fmt.Errorf("signing key not ready")
 	}
 	return checkDataDir(a.Config.DataDir)
 }

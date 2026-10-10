@@ -42,7 +42,6 @@ export function getLocale() {
   return normalizeLocale(navigator.language) || SOURCE;
 }
 
-/** 切换语言并重载页面。 */
 export function setLocale(id) {
   const next = normalizeLocale(id) || SOURCE;
   try {
@@ -53,13 +52,11 @@ export function setLocale(id) {
   location.reload();
 }
 
-/** 当前语言（切换按钮上显示的就是它）。 */
 export function currentLanguage() {
   const current = getLocale();
   return LANGUAGES.find((language) => language.id === current) ?? LANGUAGES[0];
 }
 
-/** 另一个语言（点一下切过去，按钮的 title 提示它）。 */
 export function otherLanguage() {
   const current = getLocale();
   return LANGUAGES.find((language) => language.id !== current) ?? LANGUAGES[0];

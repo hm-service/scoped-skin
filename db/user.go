@@ -70,7 +70,6 @@ func (s *Store) UserByPlayerName(playerName string) *User {
 	return nil
 }
 
-// AdminCount 返回管理员账号数量。
 func (s *Store) AdminCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -115,8 +114,6 @@ func (s *Store) CreateUser(username, password, playerName, role string) (*User, 
 	return s.userLocked(playerUUID), nil
 }
 
-// UpdateUser 改指定账号的 uuid / username / password / player_name / role。
-//
 // changes 里没出现的键表示不改；uuid 变更时顺手把 favorite 里指向旧 uuid 的行一起
 // 改掉（无外键，一致性靠代码）。最后一个管理员不允许被降级。账号不存在返回 (nil, nil)。
 func (s *Store) UpdateUser(playerUUID string, changes map[string]string) (*User, error) {
@@ -227,8 +224,8 @@ func (s *Store) Equip(assetID, playerUUID string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var category string
-	err := s.db.QueryRow("SELECT category FROM asset WHERE asset_id = ?", assetID).Scan(&category)
+	var kind string
+	err := s.db.QueryRow("SELECT kind FROM asset WHERE asset_id = ?", assetID).Scan(&kind)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "missing", nil
 	}
@@ -236,7 +233,7 @@ func (s *Store) Equip(assetID, playerUUID string) (string, error) {
 		return "", err
 	}
 	column := "skin"
-	if category == "cape" {
+	if core.CategoryOf(kind) == "cape" {
 		column = "cape"
 	}
 	_, err = s.db.Exec("UPDATE user SET "+column+" = ? WHERE uuid = ?",

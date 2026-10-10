@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 
 	"scoped-skin/core"
 	"scoped-skin/db"
@@ -22,14 +23,12 @@ const uploadChunkBytes = 64 * 1024
 // MaxBytesReader 卡在 MaxRequestBytes，所以整个 multipart 都能留在内存里。
 const uploadMemoryBytes = MaxRequestBytes
 
-// itemWithStatus 是上传响应：贴图条目 + created / updated 两个标志位。
 type itemWithStatus struct {
 	db.Item
 	Created bool `json:"created"`
 	Updated bool `json:"updated"`
 }
 
-// itemWithStats 是收藏 / 删除这类写操作的响应：贴图条目 + 最新统计数字。
 type itemWithStats struct {
 	db.Item
 	Stats db.Stats `json:"stats"`
@@ -44,8 +43,6 @@ func formValue(values url.Values, name, fallback string) string {
 	return fallback
 }
 
-// readUpload 分块读上传内容，累计超过 core.MaxUploadBytes 立刻 400（DESIGN.md 5.2）。
-//
 // 不能一把 io.ReadAll：那样是先把整个请求体吃进内存再校验，上限就只是个摆设。
 func readUpload(w http.ResponseWriter, r *http.Request, reader io.Reader) ([]byte, bool) {
 	var buffer bytes.Buffer
@@ -90,16 +87,15 @@ func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
 	httpx.Write(w, http.StatusOK, map[string]any{"tags": tags})
 }
 
-// handleLibrary 返回某个类别下的贴图列表 + 统计数字。
 func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 	user := s.currentUser(w, r)
 	if user == nil {
 		return
 	}
 	query := r.URL.Query()
-	kind := formValue(query, "kind", "skin")
-	if kind != "skin" && kind != "cape" {
-		fail(w, r, http.StatusBadRequest, "library.kind")
+	category := formValue(query, "category", "skin")
+	if !slices.Contains(core.Categories, category) {
+		fail(w, r, http.StatusBadRequest, "library.category")
 		return
 	}
 	tab := formValue(query, "tab", "all")
@@ -109,7 +105,7 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 	}
 	q := formValue(query, "q", "")
 
-	items, err := s.App.Store.List(kind, tab, q, user.UUID)
+	items, err := s.App.Store.List(category, tab, q, user.UUID)
 	if err != nil {
 		fail(w, r, http.StatusInternalServerError, "store.list-read")
 		return
@@ -120,12 +116,12 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.Write(w, http.StatusOK, map[string]any{
-		"kind":   kind,
-		"tab":    tab,
-		"q":      q,
-		"tokens": core.SplitQuery(q),
-		"items":  items,
-		"stats":  stats,
+		"category": category,
+		"tab":      tab,
+		"q":        q,
+		"tokens":   core.SplitQuery(q),
+		"items":    items,
+		"stats":    stats,
 	})
 }
 
@@ -136,8 +132,6 @@ type precheckRequest struct {
 	Data string `json:"data"`
 }
 
-// handlePrecheck 是上传前预检：这张贴图（按规范化后的字节）注册过没有。
-//
 // 尺寸已经限死在 64×64 / 64×32（DESIGN.md 5.2），把原图带上来一起验没什么负担：
 // 服务端跑规范化（PNG 头 + 真解码 + 尺寸 + 重新编码）并算 asset_id，顺手把这个 ID 回给前端
 // —— 入库字节是重编码过的，前端自己算不出这个 ID。新皮肤也返回 200（带 exists: false），
@@ -151,8 +145,9 @@ func (s *Server) handlePrecheck(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &payload) {
 		return
 	}
-	if payload.Kind != "skin" && payload.Kind != "cape" {
-		fail(w, r, http.StatusBadRequest, "library.kind")
+	kind, err := core.NormalizeKind(payload.Kind)
+	if err != nil {
+		httpx.Fail(w, http.StatusBadRequest, businessMessage(r, err))
 		return
 	}
 	data, err := base64.StdEncoding.DecodeString(payload.Data)
@@ -160,7 +155,7 @@ func (s *Server) handlePrecheck(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, http.StatusBadRequest, "upload.base64")
 		return
 	}
-	normalized, _, _, err := core.NormalizeTexture(payload.Kind, data)
+	normalized, _, _, err := core.NormalizeTexture(kind, data)
 	if err != nil {
 		if text := businessMessage(r, err); text != "" {
 			httpx.Fail(w, http.StatusBadRequest, text)
@@ -187,13 +182,11 @@ func sha256Hex(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// handleUploadSkin 上传贴图（DESIGN.md 5.1：admin / normal 才行，guest 403）。
-//
 // 前端不再算 asset_id：服务端把原图规范化（解码 → 重新编码，剥掉多余的 PNG chunk）后
 // 取这串入库字节的 sha256 作为 ID。文件分块读，一超过上限就 400 —— Content-Length 那道闸
 // 在中间件里。
 func (s *Server) handleUploadSkin(w http.ResponseWriter, r *http.Request) {
-	user := s.currentUploader(w, r)
+	user := s.currentWriter(w, r)
 	if user == nil {
 		return
 	}
@@ -226,8 +219,7 @@ func (s *Server) handleUploadSkin(w http.ResponseWriter, r *http.Request) {
 
 	form := r.MultipartForm.Value
 	item, status, err := s.App.Store.AddUpload(
-		formValue(form, "kind", "skin"),
-		formValue(form, "model", "share"),
+		formValue(form, "kind", ""),
 		form["tags"],
 		data,
 	)
@@ -243,7 +235,6 @@ func (s *Server) handleUploadSkin(w http.ResponseWriter, r *http.Request) {
 		"actor":    user.UUID,
 		"asset_id": item.ID,
 		"kind":     item.Kind,
-		"model":    item.Model,
 		"size":     item.Size,
 		"result":   status,
 	})
@@ -254,9 +245,9 @@ func (s *Server) handleUploadSkin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleFavorite 切换收藏，顺带回一份最新统计。
+// handleFavorite 切换收藏，顺带回一份最新统计。收藏是一条持久化记录，所以走写闸门。
 func (s *Server) handleFavorite(w http.ResponseWriter, r *http.Request) {
-	user := s.currentUser(w, r)
+	user := s.currentWriter(w, r)
 	if user == nil {
 		return
 	}
@@ -293,7 +284,7 @@ func (s *Server) handleDeleteItem(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, http.StatusNotFound, "asset.unknown")
 		return
 	}
-	if status == "builtin" {
+	if status == "readonly" {
 		fail(w, r, http.StatusBadRequest, "asset.cannot-del")
 		return
 	}

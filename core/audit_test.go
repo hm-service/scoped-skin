@@ -36,8 +36,6 @@ func captureLog(t *testing.T) func() []map[string]any {
 	}
 }
 
-// DESIGN.md 5.4：每条审计记录一行结构化日志，带事件名、远程 IP 与 RFC 3339 时间戳。
-//
 // 不用 t.Parallel：captureLog 会改全局的 slog 默认 handler，并行跑会互相串台。
 func TestAuditWritesStructuredRecords(t *testing.T) {
 	read := captureLog(t)

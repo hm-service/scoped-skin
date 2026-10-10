@@ -11,7 +11,6 @@ import (
 	"scoped-skin/httpx"
 )
 
-// Server 把应用容器接到 HTTP 上。
 type Server struct {
 	App *app.App
 }
@@ -24,7 +23,6 @@ func NewHandler(instance *app.App) http.Handler {
 		Concurrency(SecurityHeaders(WithLanguage(LimitBody(NewMux(instance))))))
 }
 
-// route 是一条站点路由：方法 + 路径模式 + 处理器。
 type route struct {
 	method  string
 	pattern string
@@ -62,20 +60,16 @@ func NewMux(instance *app.App) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	register(mux, []route{
-		// ── 页面与静态资源 ────────────────────────────────────────────
 		{http.MethodGet, "/{$}", server.handleIndex},
 		{http.MethodGet, "/auth", server.handleAuthPage},
 		{http.MethodGet, "/maintain", server.handleMaintainPage},
 		{http.MethodGet, "/static/{path...}", server.handleStatic},
 
-		// ── 存活 / 就绪探针（路径照 k8s 的习惯来） ────────────────────
 		{http.MethodGet, "/livez", server.handleLivez},
 		{http.MethodGet, "/readyz", server.handleReadyz},
 
-		// ── 贴图字节 ─────────────────────────────────────────────────
 		{http.MethodGet, "/asset/{asset_id}", server.handleAsset},
 
-		// ── 站点 API ─────────────────────────────────────────────────
 		{http.MethodPost, "/api/auth/login", server.handleLogin},
 		{http.MethodGet, "/api/auth/session", server.handleSession},
 		{http.MethodGet, "/api/tags", server.handleTags},
@@ -92,10 +86,8 @@ func NewMux(instance *app.App) *http.ServeMux {
 		{http.MethodDelete, "/api/admin/users/{uuid}", server.handleDeleteUser},
 	})
 
-	// ── Yggdrasil（authlib-injector）兼容接口，挂在 /api/yggdrasil 下 ──
 	yggdrasil.New(instance).Register(mux)
 
-	// ── 兜底：/api/* 回 JSON，其余回纯文本 404 ────────────────────────
 	mux.HandleFunc("/", server.handleNotFound)
 	return mux
 }

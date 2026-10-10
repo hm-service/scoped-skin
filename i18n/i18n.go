@@ -9,7 +9,6 @@ import (
 	"strings"
 )
 
-// Lang 是支持的两种语言。
 type Lang string
 
 const (
@@ -23,7 +22,6 @@ const Default = ZhHans
 // Key 包起来的参数表示「这个参数本身也是一个文案键」，渲染时先翻译它。
 type Key string
 
-// entry 是一条文案的两种语言。
 type entry struct {
 	zh string
 	en string
@@ -35,7 +33,7 @@ var catalog = map[string]entry{
 	"auth.required":     {"未登录", "Not signed in"},
 	"auth.stale":        {"登录状态无效，请重新登录", "Session is stale, sign in again"},
 	"auth.admin":        {"需要管理员身份", "Admin only"},
-	"auth.upload":       {"当前身份组不能上传贴图", "This role cannot upload textures"},
+	"auth.write":        {"当前身份组是只读的，不能修改任何资源", "This role is read-only and cannot modify anything"},
 	"auth.login.failed": {"用户名或密码不正确", "Wrong account or password"},
 
 	// ── 请求与字段 ──────────────────────────────────────────────
@@ -47,8 +45,8 @@ var catalog = map[string]entry{
 	"upload.too-big":   {"图片不能超过 32 KB", "Image is over 32 KB"},
 	"upload.base64":    {"图片数据不是合法的 base64", "Image data is not valid base64"},
 	"asset.unknown":    {"找不到该贴图", "Texture not found"},
-	"asset.cannot-del": {"内置资源不能删除", "Built-in textures cannot be deleted"},
-	"library.kind":     {"kind 只能是 skin 或 cape", "kind must be skin or cape"},
+	"asset.cannot-del": {"只读资源不能删除", "Read-only textures cannot be deleted"},
+	"library.category": {"category 只能是 skin 或 cape", "category must be skin or cape"},
 	"library.tab":      {"tab 只能是 all 或 favorites", "tab must be all or favorites"},
 
 	// ── 账号字段校验（core / db 抛的键） ─────────────────────────
@@ -65,18 +63,18 @@ var catalog = map[string]entry{
 	"valid.password.short": {"密码至少 %d 个字符", "Password is at least %d characters"},
 	"valid.password.long":  {"密码最长 %d 个字符", "Password is at most %d characters"},
 	"valid.conflict":       {"%s「%s」已被占用", "%s “%s” is taken"},
-	"valid.builtin":        {"内置资源不能修改", "Built-in textures are read-only"},
+	"valid.readonly":       {"只读资源不能修改", "Read-only textures cannot be modified"},
 	"valid.last-admin":     {"这是最后一个管理员，不能降级", "The last admin cannot be demoted"},
 	"valid.tag-count":      {"标签最多 %d 个", "At most %d tags"},
 	"valid.tag-long":       {"单个标签最长 %d 个字符", "Each tag is at most %d characters"},
 
 	// ── 贴图校验 ───────────────────────────────────────────────
-	"texture.category": {"未知类别: %s", "Unknown category: %s"},
-	"texture.png":      {"不是有效的 PNG 图片", "Not a valid PNG image"},
-	"texture.size":     {"图片尺寸无效", "Invalid image dimensions"},
-	"texture.skin":     {"皮肤必须是 64×64", "Skin must be 64×64"},
-	"texture.cape":     {"披风必须是 64×32（宽 64、高 32）", "Cape must be 64×32 (64 wide, 32 tall)"},
-	"texture.decode":   {"PNG 数据已损坏，无法解码", "PNG data is corrupted and cannot be decoded"},
+	"valid.kind":     {"kind 只能是 %s", "kind must be one of %s"},
+	"texture.png":    {"不是有效的 PNG 图片", "Not a valid PNG image"},
+	"texture.size":   {"图片尺寸无效", "Invalid image dimensions"},
+	"texture.skin":   {"皮肤必须是 64×64", "Skin must be 64×64"},
+	"texture.cape":   {"披风必须是 64×32（宽 64、高 32）", "Cape must be 64×32 (64 wide, 32 tall)"},
+	"texture.decode": {"PNG 数据已损坏，无法解码", "PNG data is corrupted and cannot be decoded"},
 
 	// ── 账号与用户管理 ──────────────────────────────────────────
 	"user.unknown":    {"找不到该用户", "Account not found"},
@@ -119,7 +117,6 @@ func Parse(header string) Lang {
 // Supported 返回支持的语言（按偏好顺序，第一档是源语言）。
 func Supported() []Lang { return []Lang{ZhHans, En} }
 
-// Normalize 把任意输入归一成支持的语言。
 func Normalize(value string) Lang {
 	switch lower := strings.ToLower(strings.TrimSpace(value)); {
 	case strings.HasPrefix(lower, "en"):
@@ -131,13 +128,11 @@ func Normalize(value string) Lang {
 	}
 }
 
-// Has 判断某个键有没有收录（测试与自检用）。
 func Has(key string) bool {
 	_, ok := catalog[key]
 	return ok
 }
 
-// Keys 返回全部键（测试与自检用）。
 func Keys() []string {
 	keys := make([]string, 0, len(catalog))
 	for key := range catalog {

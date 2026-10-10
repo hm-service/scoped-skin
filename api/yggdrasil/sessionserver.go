@@ -17,8 +17,6 @@ type joinRequest struct {
 	ServerID        string `json:"serverId"`
 }
 
-// handleJoin 是客户端进服时调的 POST /sessionserver/session/minecraft/join。
-//
 // 规范要求记下 serverId、accessToken 与发请求的客户端 IP，并设置过期时间
 // （core.Joins 用的是 30 秒）。令牌有效且 selectedProfile 与令牌绑定的角色一致才算成功。
 func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
@@ -36,8 +34,6 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleHasJoined 是服务端调的 GET /sessionserver/session/minecraft/hasJoined。
-//
 // username 要与暗号所绑定的角色名一致；ip 是可选参数（Minecraft 服务端开了
 // prevent-proxy-connections 才会带上），带上时会和 join 时记下的客户端 IP 比对。
 // 核对不上一律回 204（规范：操作失败返回 204），不泄露是哪一步不对。
@@ -62,8 +58,6 @@ func (s *Server) handleHasJoined(w http.ResponseWriter, r *http.Request) {
 	httpx.Write(w, http.StatusOK, entry)
 }
 
-// handleProfile 是 GET /sessionserver/session/minecraft/profile/{uuid}。
-//
 // unsigned 默认为 true（不带签名）；只有显式 unsigned=false 才签名。角色不存在回 204。
 func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 	user := s.App.Store.User(r.PathValue("uuid"))

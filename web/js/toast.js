@@ -17,7 +17,6 @@ export function createToast(state) {
     }, 2200);
   }
 
-  /** 出错提示：只是把 kind 换成 error。 */
   const toastError = (message) => toast(message, "error");
 
   return { toast, toastError };

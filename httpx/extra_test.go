@@ -10,8 +10,6 @@ import (
 	"scoped-skin/httpx"
 )
 
-// Write 的常规路径：状态码、Content-Type、JSON 体。
-// Fail / Unauthorized 是站点错误体的两个固定写法。
 func TestWriteFailAndUnauthorized(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	httpx.Write(recorder, http.StatusTeapot, httpx.Error{Detail: "hi"})

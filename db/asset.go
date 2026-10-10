@@ -20,29 +20,26 @@ const builtinEpoch = 1_700_000_000
 
 // itemColumns 是 DESIGN.md 3.6「贴图条目」的字段来源；head 只取 BLOB 前 24 字节，
 // 列表查询不必把整张图读进内存。
-const itemColumns = "a.asset_id, a.category, a.model_type, a.tags, a.upload_at, a.is_builtin," +
+const itemColumns = "a.asset_id, a.kind, a.tags, a.upload_at, a.readonly," +
 	" length(a.data) AS size, substr(a.data, 1, 24) AS head, (f.id IS NOT NULL) AS favorite"
 
-// EnsureBuiltins 把内置资源对齐到 manifest：缺的补上，manifest 里没有的（旧版本残留）删掉。
-//
 // 每个角色只带官方默认模型那一份（wide=steve / slim=alex）。用户上传的数据不受影响；
 // 被移除的内置资源会顺手清掉引用它的收藏与装备状态。
 func (s *Store) EnsureBuiltins(fsys fs.FS) error {
 	raw, err := fs.ReadFile(fsys, "manifest.json")
 	if err != nil {
-		return fmt.Errorf("读取内置资源清单失败: %w", err)
+		return fmt.Errorf("read builtin manifest: %w", err)
 	}
 	var manifest struct {
 		Builtin []builtinEntry `json:"builtin"`
 	}
 	if err := json.Unmarshal(raw, &manifest); err != nil {
-		return fmt.Errorf("解析内置资源清单失败: %w", err)
+		return fmt.Errorf("parse builtin manifest: %w", err)
 	}
 	total := len(manifest.Builtin)
 
 	type wanted struct {
-		category string
-		model    string
+		kind     string
 		tags     []string
 		data     []byte
 		uploadAt int64
@@ -51,25 +48,24 @@ func (s *Store) EnsureBuiltins(fsys fs.FS) error {
 	for index, entry := range manifest.Builtin {
 		data, err := fs.ReadFile(fsys, entry.File)
 		if err != nil {
-			return fmt.Errorf("读取内置资源 %s 失败: %w", entry.File, err)
+			return fmt.Errorf("read builtin texture %s: %w", entry.File, err)
 		}
-		category := entry.Category
-		if category == "" {
-			category = "skin"
+		kind, err := core.NormalizeKind(entry.Kind)
+		if err != nil {
+			return fmt.Errorf("builtin texture %s has an invalid kind: %w", entry.File, err)
 		}
 		// 内置资源也走同一条规范化路径：id 同样是「入库字节」的 sha256
-		normalized, _, _, err := core.NormalizeTexture(category, data)
+		normalized, _, _, err := core.NormalizeTexture(kind, data)
 		if err != nil {
-			return fmt.Errorf("内置资源 %s 不合规: %w", entry.File, err)
+			return fmt.Errorf("builtin texture %s is invalid: %w", entry.File, err)
 		}
 		tags, err := core.NormalizeTags(entry.Tags)
 		if err != nil {
-			return fmt.Errorf("内置资源 %s 的标签不合规: %w", entry.File, err)
+			return fmt.Errorf("builtin texture %s has invalid tags: %w", entry.File, err)
 		}
 		digest := sha256.Sum256(normalized)
 		assets[hex.EncodeToString(digest[:])] = wanted{
-			category: category,
-			model:    core.NormalizeModel(category, entry.Model),
+			kind:     kind,
 			tags:     tags,
 			data:     normalized,
 			uploadAt: int64(builtinEpoch + total - index),
@@ -79,7 +75,7 @@ func (s *Store) EnsureBuiltins(fsys fs.FS) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	existing, err := s.builtinIDsLocked()
+	existing, err := s.readonlyIDsLocked()
 	if err != nil {
 		return err
 	}
@@ -92,9 +88,9 @@ func (s *Store) EnsureBuiltins(fsys fs.FS) error {
 			return err
 		}
 		if _, err := s.db.Exec(
-			"INSERT OR IGNORE INTO asset (asset_id, category, model_type, is_builtin, upload_at, tags, data)"+
-				" VALUES (?, ?, ?, 1, ?, ?, ?)",
-			assetID, item.category, item.model, item.uploadAt, string(tags), item.data); err != nil {
+			"INSERT OR IGNORE INTO asset (asset_id, kind, readonly, upload_at, tags, data)"+
+				" VALUES (?, ?, 1, ?, ?, ?)",
+			assetID, item.kind, item.uploadAt, string(tags), item.data); err != nil {
 			return err
 		}
 	}
@@ -109,20 +105,26 @@ func (s *Store) EnsureBuiltins(fsys fs.FS) error {
 	return nil
 }
 
-// List 按上传时间倒序返回某个类别下的条目；query 按空白切成标签取交集。
+// List 按上传时间倒序返回某个粗分类（skin / cape）下的条目；query 按空白切成标签取交集。
 func (s *Store) List(category, tab, query, playerUUID string) ([]Item, error) {
+	kinds := core.KindsOf(category)
 	sqlText := "SELECT " + itemColumns + " FROM asset a" +
 		" LEFT JOIN favorite f ON f.asset = a.asset_id AND f.player = ?" +
-		" WHERE a.category = ?"
+		" WHERE a.kind IN (" + strings.TrimSuffix(strings.Repeat("?,", len(kinds)), ",") + ")"
 	if tab == "favorites" {
 		sqlText += " AND f.id IS NOT NULL"
 	}
 	sqlText += " ORDER BY a.upload_at DESC, a.id DESC"
 
+	args := []any{playerUUID}
+	for _, kind := range kinds {
+		args = append(args, kind)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	rows, err := s.db.Query(sqlText, playerUUID, category)
+	rows, err := s.db.Query(sqlText, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -213,21 +215,18 @@ func (s *Store) TagCounts() ([]TagCount, error) {
 	return tags, nil
 }
 
-// Stats 返回皮肤 / 披风总数与该用户的收藏数。
 func (s *Store) Stats(playerUUID string) (Stats, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.statsLocked(playerUUID)
 }
 
-// AddUpload 写入或更新一张贴图，返回 (条目, 状态)，状态是 created / updated / unchanged。
-//
 // 入库前先 core.NormalizeTexture（解码 → 重新编码，剥掉 PNG 里与位图无关的 chunk），
 // asset_id 就是这串入库字节的 sha256 —— 客户端不参与算这个 ID（预检会把它回给前端）。
-// 内容已存在时不会新建、也不会合并标签：标签与模型按本次提交的值覆盖（没有变化就原样
-// 返回）；内置资源不允许改，直接报错。
-func (s *Store) AddUpload(category, model string, tags []string, data []byte) (Item, string, error) {
-	normalized, _, _, err := core.NormalizeTexture(category, data)
+// 内容已存在时不会新建、也不会合并标签：标签与 kind 按本次提交的值覆盖（没有变化就原样
+// 返回）；只读资源不允许改，直接报错。
+func (s *Store) AddUpload(kind string, tags []string, data []byte) (Item, string, error) {
+	normalized, _, _, err := core.NormalizeTexture(kind, data)
 	if err != nil {
 		return Item{}, "", err
 	}
@@ -246,19 +245,18 @@ func (s *Store) AddUpload(category, model string, tags []string, data []byte) (I
 		return Item{}, "", err
 	}
 	if existing != nil {
-		if existing.Builtin {
-			return Item{}, "", &core.ValidationError{Key: "valid.builtin"}
+		if existing.Readonly {
+			return Item{}, "", &core.ValidationError{Key: "valid.readonly"}
 		}
-		wantedModel := core.NormalizeModel(category, model)
-		if slices.Equal(existing.Tags, wantedTags) && existing.Model == wantedModel {
+		if slices.Equal(existing.Tags, wantedTags) && existing.Kind == kind {
 			return *existing, "unchanged", nil
 		}
 		encoded, err := json.Marshal(wantedTags)
 		if err != nil {
 			return Item{}, "", err
 		}
-		if _, err := s.db.Exec("UPDATE asset SET tags = ?, model_type = ? WHERE asset_id = ?",
-			string(encoded), wantedModel, hexDigest); err != nil {
+		if _, err := s.db.Exec("UPDATE asset SET tags = ?, kind = ? WHERE asset_id = ?",
+			string(encoded), kind, hexDigest); err != nil {
 			return Item{}, "", err
 		}
 		updated, err := s.itemLocked(hexDigest, "")
@@ -273,10 +271,9 @@ func (s *Store) AddUpload(category, model string, tags []string, data []byte) (I
 		return Item{}, "", err
 	}
 	if _, err := s.db.Exec(
-		"INSERT INTO asset (asset_id, model_type, category, data, tags, upload_at, is_builtin)"+
-			" VALUES (?, ?, ?, ?, ?, ?, 0)",
-		hexDigest, core.NormalizeModel(category, model), category, normalized, string(encoded),
-		time.Now().Unix()); err != nil {
+		"INSERT INTO asset (asset_id, kind, data, tags, upload_at, readonly)"+
+			" VALUES (?, ?, ?, ?, ?, 0)",
+		hexDigest, kind, normalized, string(encoded), time.Now().Unix()); err != nil {
 		return Item{}, "", err
 	}
 	created, err := s.itemLocked(hexDigest, "")
@@ -286,21 +283,21 @@ func (s *Store) AddUpload(category, model string, tags []string, data []byte) (I
 	return *created, "created", nil
 }
 
-// Delete 删除贴图。返回 "deleted" / "builtin" / "missing"。
+// Delete 删除贴图。返回 "deleted" / "readonly" / "missing"。
 func (s *Store) Delete(assetID string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var builtin bool
-	err := s.db.QueryRow("SELECT is_builtin FROM asset WHERE asset_id = ?", assetID).Scan(&builtin)
+	var readonly bool
+	err := s.db.QueryRow("SELECT readonly FROM asset WHERE asset_id = ?", assetID).Scan(&readonly)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "missing", nil
 	}
 	if err != nil {
 		return "", err
 	}
-	if builtin {
-		return "builtin", nil
+	if readonly {
+		return "readonly", nil
 	}
 	if err := s.dropAssetLocked(assetID); err != nil {
 		return "", err
@@ -327,23 +324,24 @@ func (s *Store) itemLocked(assetID, playerUUID string) (*Item, error) {
 
 func (s *Store) statsLocked(playerUUID string) (Stats, error) {
 	stats := Stats{}
-	rows, err := s.db.Query("SELECT category, COUNT(*) FROM asset GROUP BY category")
+	rows, err := s.db.Query("SELECT kind, COUNT(*) FROM asset GROUP BY kind")
 	if err != nil {
 		return stats, err
 	}
 	for rows.Next() {
 		var (
-			category string
-			count    int
+			kind  string
+			count int
 		)
-		if err := rows.Scan(&category, &count); err != nil {
+		if err := rows.Scan(&kind, &count); err != nil {
 			rows.Close()
 			return stats, err
 		}
-		if category == "cape" {
-			stats.Capes = count
+		// 一个粗分类可能对应多个 kind（皮肤有 skin.steve 与 skin.alex 两行），所以是累加不是赋值。
+		if core.CategoryOf(kind) == "cape" {
+			stats.Capes += count
 		} else {
-			stats.Skins = count
+			stats.Skins += count
 		}
 	}
 	rows.Close()
@@ -372,8 +370,10 @@ func (s *Store) dropAssetLocked(assetID string) error {
 	return nil
 }
 
-func (s *Store) builtinIDsLocked() ([]string, error) {
-	rows, err := s.db.Query("SELECT asset_id FROM asset WHERE is_builtin = 1")
+// readonlyIDsLocked 列出当前所有只读资源。manifest 对齐以它为准 —— 内置即只读，
+// 所以目前这两件事是同一件事。
+func (s *Store) readonlyIDsLocked() ([]string, error) {
+	rows, err := s.db.Query("SELECT asset_id FROM asset WHERE readonly = 1")
 	if err != nil {
 		return nil, err
 	}
@@ -393,23 +393,23 @@ type scanner interface{ Scan(dest ...any) error }
 
 func scanItem(row scanner) (*Item, error) {
 	var (
-		assetID, category, model, tags string
-		uploadAt                       int64
-		builtin, favorite              bool
-		size                           int
-		head                           []byte
+		assetID, kind, tags string
+		uploadAt            int64
+		readonly, favorite  bool
+		size                int
+		head                []byte
 	)
-	if err := row.Scan(&assetID, &category, &model, &tags, &uploadAt, &builtin, &size, &head, &favorite); err != nil {
+	if err := row.Scan(&assetID, &kind, &tags, &uploadAt, &readonly, &size, &head, &favorite); err != nil {
 		return nil, err
 	}
 	width, height := core.HeaderSize(head)
 	return &Item{
 		ID:         assetID,
-		Kind:       category,
-		Model:      model,
+		Kind:       kind,
+		Category:   core.CategoryOf(kind),
 		Tags:       decodeTags(tags),
 		UploadAt:   uploadAt,
-		Builtin:    builtin,
+		Readonly:   readonly,
 		Width:      width,
 		Height:     height,
 		Size:       size,

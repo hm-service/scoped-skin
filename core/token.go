@@ -8,7 +8,6 @@ import (
 	"sync"
 )
 
-// Credential 是算站点 token 需要的三样东西，也就是 user 行里的关键字段。
 type Credential struct {
 	UUID         string
 	Username     string
@@ -18,11 +17,8 @@ type Credential struct {
 // 站点 token 的拼接分隔符：用不可见字符，避免字段内容里的冒号造成歧义。
 const tokenSeparator = "\x1f"
 
-// TokenSecretBytes 是每次启动随机生成的 HMAC 密钥长度。
 const TokenSecretBytes = 32
 
-// TokenStore 是内存里的站点 token -> uuid 映射。
-//
 // token = HMAC-SHA256(secret, uuid + "\x1f" + username + "\x1f" + password_hash)，secret 只活在内存里、
 // 每次启动重新随机（DESIGN.md 5）：所以光有库（uuid / 账号名 / password_hash 都在里头）
 // 推不出别人的 token，而重启会让所有人的站点 token 一起失效。
@@ -32,7 +28,6 @@ type TokenStore struct {
 	byToken map[string]string
 }
 
-// NewTokenStore 造一张空令牌表，并生成本次进程专属的 HMAC 密钥。
 func NewTokenStore() (*TokenStore, error) {
 	secret, err := RandomBytes(TokenSecretBytes)
 	if err != nil {
@@ -48,7 +43,6 @@ func (t *TokenStore) TokenFor(credential Credential) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-// Register 算出一个账号的 token 并登记，返回该 token。
 func (t *TokenStore) Register(credential Credential) string {
 	token := t.TokenFor(credential)
 	t.mu.Lock()
@@ -57,8 +51,6 @@ func (t *TokenStore) Register(credential Credential) string {
 	return token
 }
 
-// Rebuild 按当前库里的账号重算整张表（管理员改动用户后调用）。
-//
 // 密钥在本次进程里是固定的，所以没被改动的账号 token 不变、依旧有效；被改过 uuid /
 // 账号名 / 密码的账号，旧 token 会在这里被丢掉 —— 也就是「改凭据即踢下线」。
 func (t *TokenStore) Rebuild(credentials []Credential) {

@@ -3,11 +3,10 @@
  */
 import { t } from "./i18n.js";
 
-/** asset.model_type -> skinview3d 的模型参数 */
+/** 库里的 kind → skinview3d 的模型参数：模型已并进 kind，披风不走 setSkin。 */
 const MODEL_TYPES = {
-  share: "auto-detect",
-  steve: "default",
-  alex: "slim",
+  "skin.steve": "default",
+  "skin.alex": "slim",
 };
 
 const ANIMATION_FACTORIES = {
@@ -21,10 +20,6 @@ const ANIMATION_FACTORIES = {
 const MAX_FPS = 60;
 
 export class Preview3D {
-  /**
-   * @param {HTMLCanvasElement} canvas
-   * @param {(message: string) => void} [onError]
-   */
   constructor(canvas, onError) {
     this.canvas = canvas;
     this.onError = onError || (() => {});
@@ -107,17 +102,16 @@ export class Preview3D {
     this.viewer.setSize(width, height);
   }
 
-  /** @param {{texture_url: string, model: string}} skin */
+  /** @param {{texture_url: string, kind: string}} skin */
   setSkin(skin) {
     return this.viewer
-      .loadSkin(skin.texture_url, { model: MODEL_TYPES[skin.model] ?? "auto-detect" })
+      .loadSkin(skin.texture_url, { model: MODEL_TYPES[skin.kind] })
       .then(() => this.applyLayers()) // loadSkin 会把 visible 重置为 true，这里补回来
       .catch(() => {
         this.onError(t("皮肤贴图加载失败"));
       });
   }
 
-  /** 皮肤本体 / 外层（帽子、外套）显隐。 */
   applyLayers() {
     const skin = this.viewer.playerObject.skin;
     skin.visible = this.skinVisible;

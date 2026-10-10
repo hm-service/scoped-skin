@@ -24,7 +24,7 @@ spec:
         - ReadWriteOnce
     resources:
         requests:
-            storage: 5Gi
+            storage: 1Gi
 
 ---
 apiVersion: v1
@@ -43,17 +43,13 @@ spec:
                     name: scoped-skin-env
           resources:
               requests:
-                  cpu: 50m
                   memory: 64Mi
               limits:
-                  cpu: "1"
                   memory: 256Mi
           ports:
               - containerPort: 8080
                 hostPort: 25580
                 hostIP: 127.0.0.1
-          # podman kube play 只把 livenessProbe 翻成容器健康检查（readinessProbe / startupProbe
-          # 不支持），所以这里没有 readinessProbe。/livez 不需要 token。
           livenessProbe:
               httpGet:
                   path: /livez

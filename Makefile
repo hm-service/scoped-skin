@@ -1,9 +1,8 @@
 # 本机（容器）里的 go module cache 是只读的，所以缓存都落到仓库里，见 .gitignore。
 GOENV_VARS = GOMODCACHE=$(CURDIR)/.go-mod-cache GOCACHE=$(CURDIR)/.go-build GOFLAGS=-mod=mod
 
-# 本机开发用的管理员密码：只在 data/ 还是空的时候生效（首次启动建号），
-# 之后再改密码请走 /maintain。生产不设这个变量（缺省是随机生成并打到日志）。
-# 覆盖：make run ADMIN_PASSWORD='别的密码'
+# 本机开发用的管理员密码：只在 data/ 还是空的时候生效（首次建号）。
+# 生产不设这个变量（缺省随机生成并打到启动日志）。覆盖：make run ADMIN_PASSWORD='别的密码'
 ADMIN_PASSWORD ?= devpass123
 
 .PHONY: help build run test vet fmt i18n clean

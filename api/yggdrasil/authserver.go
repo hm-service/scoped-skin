@@ -32,7 +32,6 @@ type signoutRequest struct {
 	Password string `json:"password"`
 }
 
-// sessionResponse 是 authenticate 的响应：可用角色列表 + 绑定的角色。
 type sessionResponse struct {
 	AccessToken       string    `json:"accessToken"`
 	ClientToken       string    `json:"clientToken"`
@@ -49,8 +48,6 @@ type refreshResponse struct {
 	User            *userInfo `json:"user,omitempty"`
 }
 
-// handleAuthenticate 是 POST /authserver/authenticate：邮箱/账号名 + 密码换一个新令牌。
-//
 // 防爆破不做限流，靠的是恒定请求时间（DESIGN.md 3.5）：无论账号存不存在，这次校验都至少
 // 花掉 1 秒才返回，于是单个客户端的请求频率天然被压住。限流交给反向代理。
 func (s *Server) handleAuthenticate(w http.ResponseWriter, r *http.Request) {
@@ -83,8 +80,6 @@ func (s *Server) handleAuthenticate(w http.ResponseWriter, r *http.Request) {
 	httpx.Write(w, http.StatusOK, response)
 }
 
-// handleRefresh 是 POST /authserver/refresh：吊销原令牌并颁发一个新的。
-//
 // 请求失败时原令牌依然有效，所以这里先发新令牌、再吊销旧的。
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	payload, ok := decode[refreshRequest](w, r)
@@ -142,8 +137,6 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleInvalidate 是 POST /authserver/invalidate：吊销给定令牌。
-//
 // 规范：服务端只需要检查 accessToken，clientToken 不影响结果；无论操作是否成功都回 204。
 func (s *Server) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 	payload, ok := decode[tokenRequest](w, r)
@@ -154,8 +147,6 @@ func (s *Server) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleSignout 是 POST /authserver/signout：吊销该用户的全部令牌。
-//
 // 规范的安全提示：该 API 同样可用于判断密码的正确性，所以和 authenticate 一样走恒定耗时的
 // 校验入口（DESIGN.md 3.5）。
 func (s *Server) handleSignout(w http.ResponseWriter, r *http.Request) {

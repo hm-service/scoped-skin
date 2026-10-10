@@ -22,7 +22,6 @@ import (
 	"scoped-skin/db"
 )
 
-// openStore 起一套全新的库：测试账号 + 内置资源。
 func openStore(t *testing.T) *db.Store {
 	t.Helper()
 	store, err := db.Open(filepath.Join(t.TempDir(), "app.db"))
@@ -56,7 +55,6 @@ func seedUsers(t *testing.T, store *db.Store) {
 	}
 }
 
-// pngBytes 造一张真 PNG。
 func pngBytes(t *testing.T, width, height int) []byte {
 	t.Helper()
 	canvas := image.NewRGBA(image.Rect(0, 0, width, height))
@@ -79,12 +77,15 @@ func TestEnsureBuiltinsIsIdempotent(t *testing.T) {
 	if len(items) != 9 {
 		t.Fatalf("内置皮肤应当有 9 张，实际 %d", len(items))
 	}
-	// 按上传时间倒序（upload_at 相同则按自增 id 倒序），而且全是内置资源
+	// 按上传时间倒序（upload_at 相同则按自增 id 倒序），而且全是只读的内置资源
 	for _, item := range items {
-		if !item.Builtin {
-			t.Fatalf("内置资源标记丢了: %+v", item)
+		if !item.Readonly {
+			t.Fatalf("只读标记丢了: %+v", item)
 		}
-		if item.Kind != "skin" || item.Width != 64 || item.Height != 64 {
+		if item.Kind != "skin.steve" && item.Kind != "skin.alex" {
+			t.Fatalf("内置皮肤的 kind 不对: %+v", item)
+		}
+		if item.Category != "skin" || item.Width != 64 || item.Height != 64 {
 			t.Fatalf("条目字段不对: %+v", item)
 		}
 		if item.TextureURL != "/asset/"+item.ID || len(item.ID) != 64 {
@@ -120,7 +121,6 @@ func TestCreateUserStoresArgon2idHash(t *testing.T) {
 	if err != nil || len(users) != 6 {
 		t.Fatalf("测试账号应当有 6 个，实际 %d (%v)", len(users), err)
 	}
-	// 用户名与角色都对
 	roles := map[string]string{}
 	for _, user := range users {
 		roles[user.Username] = user.Role
@@ -183,7 +183,6 @@ func TestUserCRUD(t *testing.T) {
 		t.Fatalf("非法账号名不该建得出来")
 	}
 
-	// 改字段
 	updated, err := store.UpdateUser(created.UUID, map[string]string{
 		"username": "renamed@example.com", "player_name": "renamed", "role": "guest",
 	})
@@ -201,12 +200,10 @@ func TestUserCRUD(t *testing.T) {
 	if store.User(updated.UUID) != nil {
 		t.Fatalf("旧 UUID 应当查不到了")
 	}
-	// 不存在的账号
 	if gone, err := store.UpdateUser("ffffffffffffffffffffffffffffffff", map[string]string{"role": "guest"}); err != nil || gone != nil {
 		t.Fatalf("改不存在的账号应当回 (nil, nil): %+v (%v)", gone, err)
 	}
 
-	// 密码改动走 UpdateUser 的 password 键
 	if _, err := store.UpdateUser(moved.UUID, map[string]string{"password": "新密码12345"}); err != nil {
 		t.Fatalf("改密码失败: %v", err)
 	}
@@ -217,7 +214,6 @@ func TestUserCRUD(t *testing.T) {
 		t.Fatalf("新密码用不了")
 	}
 
-	// 删除
 	if status, err := store.DeleteUser(moved.UUID); err != nil || status != "deleted" {
 		t.Fatalf("删号失败: %q (%v)", status, err)
 	}
@@ -260,19 +256,19 @@ func TestUploadAndUpdateTexture(t *testing.T) {
 	store := openStore(t)
 
 	skin := pngBytes(t, 64, 64)
-	item, status, err := store.AddUpload("skin", "steve", []string{"自建", "蓝色"}, skin)
+	item, status, err := store.AddUpload("skin.steve", []string{"自建", "蓝色"}, skin)
 	if err != nil || status != "created" {
 		t.Fatalf("上传失败: %q (%v)", status, err)
 	}
 	// 入库的是规范化后的字节，id 是它的 sha256（Go 编出来的 PNG 本来就是不动点）
-	normalized, _, _, err := core.NormalizeTexture("skin", skin)
+	normalized, _, _, err := core.NormalizeTexture("skin.steve", skin)
 	if err != nil {
 		t.Fatalf("规范化失败: %v", err)
 	}
 	if wantID := digestHex(normalized); item.ID != wantID {
 		t.Fatalf("id = %s，想要 sha256(入库字节) = %s", item.ID, wantID)
 	}
-	if item.Builtin || item.Kind != "skin" || item.Model != "steve" || item.Width != 64 ||
+	if item.Readonly || item.Kind != "skin.steve" || item.Category != "skin" || item.Width != 64 ||
 		item.Height != 64 || item.Size != len(normalized) || item.Favorite || len(item.Tags) != 2 {
 		t.Fatalf("新条目字段不对: %+v", item)
 	}
@@ -286,7 +282,7 @@ func TestUploadAndUpdateTexture(t *testing.T) {
 	if types := chunkTypes(dirty); len(types) != 5 || types[0] != "IHDR" {
 		t.Fatalf("测试样本没造对: %v", types)
 	}
-	stripped, status, err := store.AddUpload("skin", "share", []string{"干净"}, dirty)
+	stripped, status, err := store.AddUpload("skin.alex", []string{"干净"}, dirty)
 	if err != nil || status != "updated" {
 		t.Fatalf("带元数据上传应当落到已有那条上: %q (%v)", status, err)
 	}
@@ -304,31 +300,31 @@ func TestUploadAndUpdateTexture(t *testing.T) {
 		t.Fatalf("夹带的元数据还在")
 	}
 
-	// 内容重复：标签 / 模型按本次提交的值覆盖
-	updated, status, err := store.AddUpload("skin", "alex", []string{"自建"}, skin)
+	// 内容重复：标签 / kind 按本次提交的值覆盖
+	updated, status, err := store.AddUpload("skin.alex", []string{"自建"}, skin)
 	if err != nil || status != "updated" {
 		t.Fatalf("覆盖失败: %q (%v)", status, err)
 	}
-	if updated.Model != "alex" || len(updated.Tags) != 1 || updated.ID != item.ID {
+	if updated.Kind != "skin.alex" || updated.Category != "skin" || len(updated.Tags) != 1 || updated.ID != item.ID {
 		t.Fatalf("覆盖后的字段不对: %+v", updated)
 	}
 	// 没有变化就是 unchanged
-	if _, status, err := store.AddUpload("skin", "alex", []string{"自建"}, skin); err != nil || status != "unchanged" {
+	if _, status, err := store.AddUpload("skin.alex", []string{"自建"}, skin); err != nil || status != "unchanged" {
 		t.Fatalf("重复上传 = %q (%v)", status, err)
 	}
 
 	// 不是 PNG / 尺寸不合法
-	if _, _, err := store.AddUpload("skin", "share", nil, []byte("hello")); err == nil {
+	if _, _, err := store.AddUpload("skin.steve", nil, []byte("hello")); err == nil {
 		t.Fatalf("非 PNG 应当报错")
 	}
 	// 只收默认尺寸：皮肤必须正好 64×64，披风必须正好 64×32
 	for _, size := range [][2]int{{32, 32}, {64, 32}, {128, 128}, {512, 512}} {
-		if _, _, err := store.AddUpload("skin", "share", nil, pngBytes(t, size[0], size[1])); err == nil {
+		if _, _, err := store.AddUpload("skin.steve", nil, pngBytes(t, size[0], size[1])); err == nil {
 			t.Fatalf("皮肤 %d×%d 不该通过", size[0], size[1])
 		}
 	}
 	for _, size := range [][2]int{{64, 64}, {128, 64}, {32, 64}} {
-		if _, _, err := store.AddUpload("cape", "share", nil, pngBytes(t, size[0], size[1])); err == nil {
+		if _, _, err := store.AddUpload("cape", nil, pngBytes(t, size[0], size[1])); err == nil {
 			t.Fatalf("披风 %d×%d 不该通过", size[0], size[1])
 		}
 	}
@@ -336,7 +332,7 @@ func TestUploadAndUpdateTexture(t *testing.T) {
 	var headerOnly bytes.Buffer
 	headerOnly.Write([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 13, 'I', 'H', 'D', 'R'})
 	headerOnly.Write([]byte{0, 0, 0, 64, 0, 0, 0, 64})
-	if _, _, err := store.AddUpload("skin", "share", nil, headerOnly.Bytes()); err == nil {
+	if _, _, err := store.AddUpload("skin.steve", nil, headerOnly.Bytes()); err == nil {
 		t.Fatalf("解不开的 PNG 不该通过")
 	}
 	// 内置资源不能改（拿它的内容重传）
@@ -345,13 +341,13 @@ func TestUploadAndUpdateTexture(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读内置资源失败: %v", err)
 	}
-	if _, _, err := store.AddUpload("skin", "share", nil, builtinData); err == nil {
+	if _, _, err := store.AddUpload("skin.steve", nil, builtinData); err == nil {
 		t.Fatalf("内置资源不该能改")
 	}
 
-	// 披风的 model 固定 share
-	cape, status, err := store.AddUpload("cape", "alex", nil, pngBytes(t, 64, 32))
-	if err != nil || status != "created" || cape.Model != core.CapeModel {
+	// 披风的 kind 就是 cape、category 是 cape
+	cape, status, err := store.AddUpload("cape", nil, pngBytes(t, 64, 32))
+	if err != nil || status != "created" || cape.Kind != "cape" || cape.Category != "cape" {
 		t.Fatalf("传披风失败: %+v (%q, %v)", cape, status, err)
 	}
 	stats, _ := store.Stats("")
@@ -365,7 +361,6 @@ func digestHex(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// chunkTypes 按出现顺序列出 PNG 里的 chunk 类型。
 func chunkTypes(data []byte) []string {
 	types := []string{}
 	offset := 8
@@ -415,7 +410,7 @@ func TestListFavoriteSearchEquipDelete(t *testing.T) {
 	store := openStore(t)
 
 	skin := pngBytes(t, 64, 64)
-	item, _, err := store.AddUpload("skin", "steve", []string{"自建", "蓝色外套"}, skin)
+	item, _, err := store.AddUpload("skin.steve", []string{"自建", "蓝色外套"}, skin)
 	if err != nil {
 		t.Fatalf("上传失败: %v", err)
 	}
@@ -479,8 +474,8 @@ func TestListFavoriteSearchEquipDelete(t *testing.T) {
 		t.Fatalf("不存在的贴图应当回 nil")
 	}
 
-	// 内置资源不能删
-	if status, _ := store.Delete(builtinItem(t, store).ID); status != "builtin" {
+	// 只读的内置资源不能删
+	if status, _ := store.Delete(builtinItem(t, store).ID); status != "readonly" {
 		t.Fatalf("删内置资源 = %q", status)
 	}
 	// 删自己传的：收藏与装备状态一起清掉
@@ -638,7 +633,6 @@ func mustUsers(t *testing.T, store *db.Store) []db.User {
 	return users
 }
 
-// builtinItem 随便挑一张内置资源。
 func builtinItem(t *testing.T, store *db.Store) db.Item {
 	t.Helper()
 	items, err := store.List("skin", "all", "", "")
@@ -646,11 +640,11 @@ func builtinItem(t *testing.T, store *db.Store) db.Item {
 		t.Fatalf("列表失败: %v", err)
 	}
 	for _, item := range items {
-		if item.Builtin {
+		if item.Readonly {
 			return item
 		}
 	}
-	t.Fatalf("库里没有内置资源")
+	t.Fatalf("库里没有只读的内置资源")
 	return db.Item{}
 }
 

@@ -25,7 +25,6 @@ func pngHeader(width, height uint32) []byte {
 	return body
 }
 
-// pngBytes 造一张真 PNG。
 func pngBytes(t *testing.T, width, height int) []byte {
 	t.Helper()
 	canvas := image.NewRGBA(image.Rect(0, 0, width, height))
@@ -43,25 +42,26 @@ func TestValidateTexture(t *testing.T) {
 
 	cases := []struct {
 		name          string
-		category      string
+		kind          string
 		width, height int
 		data          []byte
 		wantErr       string
 	}{
-		{"皮肤 64×64", "skin", 64, 64, nil, ""},
+		{"皮肤 64×64（steve）", "skin.steve", 64, 64, nil, ""},
+		{"皮肤 64×64（alex）", "skin.alex", 64, 64, nil, ""},
 		{"披风 64×32", "cape", 64, 32, nil, ""},
-		{"皮肤 128×128（HD 不收）", "skin", 128, 128, nil, "皮肤必须是 64×64"},
-		{"皮肤 512×512（HD 不收）", "skin", 512, 512, nil, "皮肤必须是 64×64"},
-		{"皮肤 64×32", "skin", 64, 32, nil, "皮肤必须是 64×64"},
-		{"皮肤 32×32", "skin", 32, 32, nil, "皮肤必须是 64×64"},
+		{"皮肤 128×128（HD 不收）", "skin.steve", 128, 128, nil, "皮肤必须是 64×64"},
+		{"皮肤 512×512（HD 不收）", "skin.alex", 512, 512, nil, "皮肤必须是 64×64"},
+		{"皮肤 64×32", "skin.steve", 64, 32, nil, "皮肤必须是 64×64"},
+		{"皮肤 32×32", "skin.alex", 32, 32, nil, "皮肤必须是 64×64"},
 		{"披风 32×64（宽高写反了）", "cape", 32, 64, nil, "披风必须是 64×32"},
 		{"披风 64×64", "cape", 64, 64, nil, "披风必须是 64×32"},
 		{"披风 128×64", "cape", 128, 64, nil, "披风必须是 64×32"},
-		{"不是 PNG", "skin", 0, 0, []byte("GIF89a...................."), "不是有效的 PNG 图片"},
-		{"太短", "skin", 0, 0, []byte{0x89, 'P'}, "不是有效的 PNG 图片"},
-		{"只有 IHDR、没有图像数据", "skin", 0, 0, pngHeader(64, 64), "PNG 数据已损坏，无法解码"},
-		{"声明尺寸为 0", "skin", 0, 0, pngHeader(0, 0), "图片尺寸无效"},
-		{"未知类别", "hat", 64, 64, nil, "未知类别"},
+		{"不是 PNG", "skin.steve", 0, 0, []byte("GIF89a...................."), "不是有效的 PNG 图片"},
+		{"太短", "skin.steve", 0, 0, []byte{0x89, 'P'}, "不是有效的 PNG 图片"},
+		{"只有 IHDR、没有图像数据", "skin.steve", 0, 0, pngHeader(64, 64), "PNG 数据已损坏，无法解码"},
+		{"声明尺寸为 0", "skin.steve", 0, 0, pngHeader(0, 0), "图片尺寸无效"},
+		{"未知 kind", "hat", 64, 64, nil, "kind 只能是"},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -69,7 +69,7 @@ func TestValidateTexture(t *testing.T) {
 			if data == nil {
 				data = pngBytes(t, testCase.width, testCase.height)
 			}
-			width, height, err := core.ValidateTexture(testCase.category, data)
+			width, height, err := core.ValidateTexture(testCase.kind, data)
 			if testCase.wantErr == "" {
 				if err != nil {
 					t.Fatalf("不该报错: %v", err)
@@ -91,7 +91,7 @@ func TestValidateTexture(t *testing.T) {
 
 	// 上限：32 KiB（尺寸检查再严，体积闸门也还在）
 	oversized := append(pngHeader(core.SkinSize, core.SkinSize), make([]byte, core.MaxUploadBytes)...)
-	if _, _, err := core.ValidateTexture("skin", oversized); err == nil ||
+	if _, _, err := core.ValidateTexture("skin.steve", oversized); err == nil ||
 		!strings.Contains(err.Error(), "图片不能超过 32 KB") {
 		t.Fatalf("超过 32 KiB 应当被拒: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestNormalizeUserFields(t *testing.T) {
 	}
 }
 
-func TestNormalizeTagsAndModel(t *testing.T) {
+func TestNormalizeTags(t *testing.T) {
 	t.Parallel()
 
 	tags, err := core.NormalizeTags([]string{" 官方 ", "官方", "Steve", "", "  ", "蓝色  外套"})
@@ -216,22 +216,65 @@ func TestNormalizeTagsAndModel(t *testing.T) {
 	if got := core.CleanTags(many); len(got) != core.MaxTagsPerAsset {
 		t.Fatalf("CleanTags 应当截到 %d 个，实际 %d", core.MaxTagsPerAsset, len(got))
 	}
+}
 
-	cases := map[string]string{
-		"steve": "steve", "classic": "steve", "default": "steve",
-		"alex": "alex", "slim": "alex",
-		"share": "share", "auto-detect": "share", "": "share", "乱写": "share", "STEVE": "steve",
+// DESIGN.md 4.2：kind 是库里存的那一列（已含模型），只认 skin.steve / skin.alex / cape。
+// 旧的 model（share / steve / alex）与粗分类（skin）都不再是合法取值。
+func TestNormalizeKind(t *testing.T) {
+	t.Parallel()
+
+	valid := map[string]string{
+		"skin.steve":    "skin.steve",
+		"skin.alex":     "skin.alex",
+		"cape":          "cape",
+		"SKIN.STEVE":    "skin.steve",
+		"  Skin.Alex  ": "skin.alex",
+		"\tcape\n":      "cape",
 	}
-	for input, want := range cases {
-		if got := core.NormalizeModel("skin", input); got != want {
-			t.Fatalf("NormalizeModel(skin, %q) = %q，想要 %q", input, got, want)
+	for input, want := range valid {
+		got, err := core.NormalizeKind(input)
+		if err != nil || got != want {
+			t.Fatalf("NormalizeKind(%q) = %q, %v，想要 %q", input, got, err, want)
 		}
 	}
-	// DESIGN.md 4.2：category 为 cape 时 model_type 取 share
-	for _, input := range []string{"steve", "alex", "", "乱写"} {
-		if got := core.NormalizeModel("cape", input); got != core.CapeModel {
-			t.Fatalf("NormalizeModel(cape, %q) = %q，应当是 share", input, got)
+
+	// 非法值 / 旧结构的枚举值 / 大小写与空白之外的花样，都要回 valid.kind
+	for _, bad := range []string{
+		"", "   ", "skin", "steve", "alex", "share", "default", "slim", "classic",
+		"skin.steve.x", "skin-steve", "skin steve", "capes", "SKIN", "乱写",
+	} {
+		got, err := core.NormalizeKind(bad)
+		if err == nil {
+			t.Fatalf("NormalizeKind(%q) 不该通过（回 %q）", bad, got)
 		}
+		var invalid *core.ValidationError
+		if !asValidation(err, &invalid) || invalid.Key != "valid.kind" {
+			t.Fatalf("NormalizeKind(%q) 的错误 = %v，想要 *core.ValidationError{valid.kind}", bad, err)
+		}
+	}
+}
+
+// kind ↔ category 的推导关系：皮肤类两个 kind 都归 skin，cape 归 cape。
+func TestCategoryOfAndKindsOf(t *testing.T) {
+	t.Parallel()
+
+	for _, kind := range core.Kinds {
+		category := core.CategoryOf(kind)
+		if category != "skin" && category != "cape" {
+			t.Fatalf("CategoryOf(%q) = %q，不在 Categories 里", kind, category)
+		}
+	}
+	if core.CategoryOf("skin.steve") != "skin" || core.CategoryOf("skin.alex") != "skin" ||
+		core.CategoryOf("cape") != "cape" {
+		t.Fatalf("CategoryOf 的映射不对")
+	}
+
+	skins := core.KindsOf("skin")
+	if len(skins) != 2 || skins[0] != "skin.steve" || skins[1] != "skin.alex" {
+		t.Fatalf("KindsOf(skin) = %v，想要 [skin.steve skin.alex]", skins)
+	}
+	if capes := core.KindsOf("cape"); len(capes) != 1 || capes[0] != "cape" {
+		t.Fatalf("KindsOf(cape) = %v，想要 [cape]", capes)
 	}
 }
 
@@ -308,14 +351,14 @@ func TestValidationKeysAreInCatalog(t *testing.T) {
 			return err
 		},
 		func() error { _, _, _, err := core.NormalizeTexture("hat", pngBytes(t, 64, 64)); return err },
-		func() error { _, _, _, err := core.NormalizeTexture("skin", []byte("junk")); return err },
-		func() error { _, _, _, err := core.NormalizeTexture("skin", pngHeader(64, 64)); return err },
-		func() error { _, _, _, err := core.NormalizeTexture("skin", pngHeader(0, 0)); return err },
-		func() error { _, _, _, err := core.NormalizeTexture("skin", pngBytes(t, 128, 128)); return err },
+		func() error { _, _, _, err := core.NormalizeTexture("skin.steve", []byte("junk")); return err },
+		func() error { _, _, _, err := core.NormalizeTexture("skin.steve", pngHeader(64, 64)); return err },
+		func() error { _, _, _, err := core.NormalizeTexture("skin.steve", pngHeader(0, 0)); return err },
+		func() error { _, _, _, err := core.NormalizeTexture("skin.steve", pngBytes(t, 128, 128)); return err },
 		func() error { _, _, _, err := core.NormalizeTexture("cape", pngBytes(t, 64, 64)); return err },
 		func() error {
 			data := append(pngHeader(64, 64), make([]byte, core.MaxUploadBytes)...)
-			_, _, _, err := core.NormalizeTexture("skin", data)
+			_, _, _, err := core.NormalizeTexture("skin.steve", data)
 			return err
 		},
 	}

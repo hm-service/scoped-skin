@@ -13,7 +13,6 @@ export const UploadPanel = {
     const canvas = ref(null);
     const fileInput = ref(null);
 
-    // 「已有」标签按使用次数排序，点一下就加/删
     const library = computed(() => [...store.state.library].sort(byPopularity));
 
     function draw() {
@@ -24,11 +23,11 @@ export const UploadPanel = {
         element.getContext("2d").clearRect(0, 0, element.width, element.height);
         return;
       }
-      renderPreview(element, image, store.state.kind, store.state.model);
+      renderPreview(element, image, store.pendingKind);
     }
 
     onMounted(draw);
-    watch(() => [store.pendingImage, store.state.kind, store.state.model], draw);
+    watch(() => [store.pendingImage, store.pendingKind], draw);
 
     function pick() {
       fileInput.value?.click();
@@ -81,7 +80,7 @@ export const UploadPanel = {
         </div>
       </div>
 
-      <label v-if="store.state.kind === 'skin'" class="field field-model">
+      <label v-if="store.state.category === 'skin'" class="field field-model">
         <span>{{ t("模型") }}</span>
         <select v-model="store.state.model">
           <option value="steve">steve</option>

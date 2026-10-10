@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"encoding/base64"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -201,8 +202,7 @@ func TestUploadRejectsMissingFile(t *testing.T) {
 	instance, handler := newSite(t)
 	token := testenv.Token(t, instance, "admin")
 
-	// 不是 multipart
-	recorder := testenv.Do(handler, http.MethodPost, "/api/skins", map[string]any{"kind": "skin"}, token)
+	recorder := testenv.Do(handler, http.MethodPost, "/api/skins", map[string]any{"kind": "skin.steve"}, token)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("非 multipart 上传状态码 = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
 	}
@@ -210,10 +210,9 @@ func TestUploadRejectsMissingFile(t *testing.T) {
 		t.Errorf("非 multipart 上传 detail = %q", got)
 	}
 
-	// 是 multipart，但没有 file 字段
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
-	if err := writer.WriteField("kind", "skin"); err != nil {
+	if err := writer.WriteField("kind", "skin.steve"); err != nil {
 		t.Fatalf("写表单失败: %v", err)
 	}
 	if err := writer.Close(); err != nil {
@@ -238,7 +237,7 @@ func TestUploadOverBodyLimitIsRejected(t *testing.T) {
 	instance, handler := newSite(t)
 	token := testenv.Token(t, instance, "admin")
 
-	recorder := doUpload(t, handler, token, [][2]string{{"kind", "skin"}},
+	recorder := doUpload(t, handler, token, [][2]string{{"kind", "skin.steve"}},
 		"huge.bin", make([]byte, api.MaxRequestBytes+512*1024))
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("超过请求体上限状态码 = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
@@ -253,15 +252,15 @@ func TestLibraryQueryParameterEdges(t *testing.T) {
 	instance, handler := newSite(t)
 	token := testenv.Token(t, instance, "admin")
 
-	recorder := testenv.Do(handler, http.MethodGet, "/api/library?kind=", nil, token)
+	recorder := testenv.Do(handler, http.MethodGet, "/api/library?category=", nil, token)
 	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("空 kind 状态码 = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
+		t.Fatalf("空 category 状态码 = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
 	}
-	if got := detail(t, recorder); got != "kind 只能是 skin 或 cape" {
-		t.Errorf("空 kind detail = %q", got)
+	if got := detail(t, recorder); got != "category 只能是 skin 或 cape" {
+		t.Errorf("空 category detail = %q", got)
 	}
 
-	recorder = testenv.Do(handler, http.MethodGet, "/api/library?kind=skin&tab=weird", nil, token)
+	recorder = testenv.Do(handler, http.MethodGet, "/api/library?category=skin&tab=weird", nil, token)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("非法 tab 状态码 = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
 	}
@@ -270,7 +269,7 @@ func TestLibraryQueryParameterEdges(t *testing.T) {
 	}
 
 	// 空 q → tokens 是空数组（不是 null）
-	recorder = testenv.Do(handler, http.MethodGet, "/api/library?kind=skin&q=", nil, token)
+	recorder = testenv.Do(handler, http.MethodGet, "/api/library?category=skin&q=", nil, token)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("空 q 状态码 = %d，想要 200（%s）", recorder.Code, recorder.Body.String())
 	}
@@ -282,7 +281,7 @@ func TestLibraryQueryParameterEdges(t *testing.T) {
 
 	// 多个查询标签：去重 + 保留大小写，交给前端显示
 	recorder = testenv.Do(handler, http.MethodGet,
-		"/api/library?kind=skin&q="+url.QueryEscape("官方  官方  Steve"), nil, token)
+		"/api/library?category=skin&q="+url.QueryEscape("官方  官方  Steve"), nil, token)
 	payload = testenv.Decode(t, recorder)
 	tokens, _ = payload["tokens"].([]any)
 	if len(tokens) != 2 || tokens[0] != "官方" || tokens[1] != "Steve" {
@@ -298,7 +297,6 @@ func TestLibraryQueryParameterEdges(t *testing.T) {
 		t.Errorf("不存在的贴图 detail = %q", got)
 	}
 
-	// /auth 与 /maintain 两个页面路由
 	for _, path := range []string{"/auth", "/maintain"} {
 		recorder = testenv.Do(handler, http.MethodGet, path, nil, "")
 		if recorder.Code != http.StatusOK {
@@ -311,6 +309,90 @@ func TestLibraryQueryParameterEdges(t *testing.T) {
 		if recorder.Body.Len() == 0 {
 			t.Errorf("GET %s 回了空页面", path)
 		}
+	}
+}
+
+// DESIGN.md 5.1 的回归：guest 收紧成只读身份组 —— 任何会改持久化资源的写操作都要 403
+// （文案键 auth.write），但读接口（列表 / 标签 / me / 预检 / 贴图字节）照常可用。
+func TestGuestIsReadOnly(t *testing.T) {
+	instance, handler := newSite(t)
+	guestToken := testenv.Token(t, instance, "guest")
+	normalToken := testenv.Token(t, instance, "steve")
+
+	// 挑一条真实存在的贴图：写闸门必须排在资源查找前面，403 不能是 404 的副作用
+	assetID := firstItem(t, handler, guestToken, "skin")["id"].(string)
+
+	writes := []struct {
+		name, method, path string
+		body               any
+	}{
+		{"收藏", http.MethodPost, "/api/items/" + assetID + "/favorite", nil},
+		{"换装", http.MethodPost, "/api/me/equip", map[string]any{"asset_id": assetID}},
+		{"上传", http.MethodPost, "/api/skins", map[string]any{}},
+	}
+	for _, call := range writes {
+		recorder := testenv.Do(handler, call.method, call.path, call.body, guestToken)
+		if recorder.Code != http.StatusForbidden {
+			t.Errorf("guest %s 状态码 = %d，想要 403（%s）", call.name, recorder.Code, recorder.Body.String())
+			continue
+		}
+		if got := detail(t, recorder); got != "当前身份组是只读的，不能修改任何资源" {
+			t.Errorf("guest %s detail = %q，想要只读身份组文案", call.name, got)
+		}
+	}
+
+	// 被拒的写操作不能留下任何痕迹：既没收藏，也没换装
+	guest := instance.Store.UserByUsername("guest")
+	item, err := instance.Store.Item(assetID, guest.UUID)
+	if err != nil {
+		t.Fatalf("查条目失败: %v", err)
+	}
+	if item == nil || item.Favorite {
+		t.Errorf("guest 的收藏被写进去了: %+v", item)
+	}
+	if after := instance.Store.User(guest.UUID); after.Skin != "" || after.Cape != "" {
+		t.Errorf("guest 的装备状态被写进去了: %+v", after)
+	}
+
+	// 只读接口对 guest 一律放行
+	skinPNG := encodePNG(t, core.SkinSize, core.SkinSize)
+	reads := []struct {
+		name, method, path string
+		body               any
+	}{
+		{"皮肤列表", http.MethodGet, "/api/library?category=skin", nil},
+		{"披风列表", http.MethodGet, "/api/library?category=cape", nil},
+		{"标签", http.MethodGet, "/api/tags", nil},
+		{"账号", http.MethodGet, "/api/me", nil},
+		{"贴图字节", http.MethodGet, "/asset/" + assetID, nil},
+		{"预检", http.MethodPost, "/api/precheck", map[string]any{
+			"kind": "skin.steve",
+			"data": base64.StdEncoding.EncodeToString(skinPNG),
+		}},
+	}
+	for _, call := range reads {
+		recorder := testenv.Do(handler, call.method, call.path, call.body, guestToken)
+		if recorder.Code != http.StatusOK {
+			t.Errorf("guest %s 状态码 = %d，想要 200（%s）", call.name, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	// 删除仍走 admin 闸门：guest 403，但文案是 auth.admin 而不是只读身份组
+	recorder := testenv.Do(handler, http.MethodDelete, "/api/items/"+assetID, nil, guestToken)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("guest 删除状态码 = %d，想要 403（%s）", recorder.Code, recorder.Body.String())
+	}
+	if got := detail(t, recorder); got != "需要管理员身份" {
+		t.Errorf("guest 删除 detail = %q，想要 %q", got, "需要管理员身份")
+	}
+
+	// normal 身份组不受影响：收藏 / 换装都能成，证明 403 是冲 guest 来的而不是全线封死
+	if recorder := testenv.Do(handler, http.MethodPost, "/api/items/"+assetID+"/favorite", nil, normalToken); recorder.Code != http.StatusOK {
+		t.Fatalf("normal 收藏状态码 = %d，想要 200（%s）", recorder.Code, recorder.Body.String())
+	}
+	if recorder := testenv.Do(handler, http.MethodPost, "/api/me/equip",
+		map[string]any{"asset_id": assetID}, normalToken); recorder.Code != http.StatusOK {
+		t.Fatalf("normal 换装状态码 = %d，想要 200（%s）", recorder.Code, recorder.Body.String())
 	}
 }
 

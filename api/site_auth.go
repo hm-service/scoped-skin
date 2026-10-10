@@ -73,14 +73,15 @@ func (s *Server) currentAdmin(w http.ResponseWriter, r *http.Request) *db.User {
 	return user
 }
 
-// currentUploader 是上传闸门：DESIGN.md 5.1 里 admin / normal 能传贴图，guest 只能看和换皮肤。
-func (s *Server) currentUploader(w http.ResponseWriter, r *http.Request) *db.User {
+// currentWriter 是写闸门：DESIGN.md 5.1 里 guest 是只读身份组 —— 上传、收藏、换装这些
+// 会改持久化资源的操作都要求 admin / normal。
+func (s *Server) currentWriter(w http.ResponseWriter, r *http.Request) *db.User {
 	user := s.currentUser(w, r)
 	if user == nil {
 		return nil
 	}
 	if user.Role != "admin" && user.Role != "normal" {
-		fail(w, r, http.StatusForbidden, "auth.upload")
+		fail(w, r, http.StatusForbidden, "auth.write")
 		return nil
 	}
 	return user
@@ -125,7 +126,6 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleSession 是前端用来确认 token 还有效的接口。
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	user := s.currentUser(w, r)
 	if user == nil {

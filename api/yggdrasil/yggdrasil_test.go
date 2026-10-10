@@ -41,7 +41,6 @@ func newHarness(t *testing.T) *harness {
 	return newHarnessWith(t, nil)
 }
 
-// newHarnessWith 同上，但允许先改一下实例配置（例如 TrustedProxies）。
 func newHarnessWith(t *testing.T, mutate func(*app.Config)) *harness {
 	t.Helper()
 	instance := testenv.NewWith(t, mutate)
@@ -115,7 +114,6 @@ type errorJSON struct {
 	ErrorMessage string `json:"errorMessage"`
 }
 
-// authenticate 走一遍登录并断言成功。
 func (h *harness) authenticate(username, password string, extra map[string]any) authenticateJSON {
 	h.t.Helper()
 	payload := map[string]any{"username": username, "password": password}
@@ -149,7 +147,6 @@ func (h *harness) wantsError(recorder *httptest.ResponseRecorder, status int, ki
 	}
 }
 
-// texturePayload 解开 textures 属性里那串 base64。
 type texturePayload struct {
 	Timestamp   int64  `json:"timestamp"`
 	ProfileID   string `json:"profileId"`
@@ -706,7 +703,7 @@ func TestProfile(t *testing.T) {
 	}
 }
 
-// 装备皮肤后，textures 里要出现指向 /asset/{sha256} 的 SKIN，模型按库里的 model_type 映射。
+// 装备皮肤后，textures 里要出现指向 /asset/{sha256} 的 SKIN，模型按库里的 kind 映射。
 func TestProfileCarriesEquippedSkin(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
@@ -715,8 +712,8 @@ func TestProfileCarriesEquippedSkin(t *testing.T) {
 	if err != nil || len(items) == 0 {
 		t.Fatalf("内置资源没灌进来: %v %d", err, len(items))
 	}
-	slimID := pickModel(t, items, "alex")
-	wideID := pickModel(t, items, "steve")
+	slimID := pickKind(t, items, "skin.alex")
+	wideID := pickKind(t, items, "skin.steve")
 
 	steve := h.app.Store.UserByUsername("steve")
 	if status, err := h.app.Store.Equip(wideID, steve.UUID); err != nil || status != "ok" {
@@ -758,14 +755,14 @@ func TestProfileCarriesEquippedSkin(t *testing.T) {
 	}
 }
 
-func pickModel(t *testing.T, items []db.Item, model string) string {
+func pickKind(t *testing.T, items []db.Item, kind string) string {
 	t.Helper()
 	for _, item := range items {
-		if item.Model == model {
+		if item.Kind == kind {
 			return item.ID
 		}
 	}
-	t.Fatalf("内置资源里没有 model=%s 的皮肤", model)
+	t.Fatalf("内置资源里没有 kind=%s 的皮肤", kind)
 	return ""
 }
 

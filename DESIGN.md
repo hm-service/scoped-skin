@@ -19,7 +19,7 @@
 | ADMIN_USERNAME  | `admin`                | 首次启动生成的管理员账号名                           |
 | ADMIN_PASSWORD  | 空（随机生成）         | 首次启动的管理员密码；留空则随机生成并打到启动日志里 |
 | TRUSTED_PROXIES | `127.0.0.1/32,::1/128` | 可信反向代理网段，见 [5.5](#55-源-ip-与反向代理)     |
-| READYZ_TOKEN   | 空（不校验）           | `/readyz` 的 `?token=` 门槛，见 [3.2](#32-readyz)    |
+| READYZ_TOKEN    | 空（不校验）           | `/readyz` 的 `?token=` 门槛，见 [3.2](#32-readyz)    |
 
 ### 1.2. 首次启动
 
@@ -33,6 +33,10 @@
 ### 1.3. 日志
 
 不落任何日志文件：访问日志、审计记录、错误都走 stdout 的结构化 JSON，由容器运行时收集。
+
+日志一律英文（`msg`、错误串与字段值）：它面向运维与容器运行时；用户可见的文案才走 i18n，见 [2.4 语言](#24-语言)。
+
+访问日志只记页面与 `/api/*`：`/static/*`、`/asset/*` 与 `/livez` 不记（一次页面加载就是十几个静态请求；`/livez` 每 30 秒被存活探针敲一次且永远是 `200`），`/readyz` 照记 —— 它带 token 门槛，`401` / `503` 值得留痕。审计事件是另一回事，见 [5.4](#54-审计记录)。
 
 ### 1.4. 反向代理
 
@@ -95,6 +99,8 @@
 ### 3.3. /livez
 
 只要服务在运行就统一响应 `200 OK`，无响应体。
+
+[k8s.scoped-skin.yaml](k8s.scoped-skin.yaml) 用它做 `livenessProbe`（`initialDelaySeconds 5` / `periodSeconds 30` / `failureThreshold 3`）。**这条探针依赖镜像里的 `curl`**：podman 把 httpGet 翻成在容器内执行的 `curl -f http://localhost:8080/livez || exit 1`，镜像没装 curl 时探针恒失败，容器会被反复判 unhealthy 后重启（周期约 `initialDelay + failureThreshold × period` ≈ 93 秒），表现为日志里周期性出现 `server started` 而访问日志里一条 `/livez` 都没有。证据与取舍见 [5.7](#57-设计取舍)。
 
 ### 3.4. /asset/{asset_id}
 
@@ -170,7 +176,7 @@ flowchart LR
 - **角色绑定**：每个账号只有一个角色，`authenticate` 颁发的令牌始终已绑定，因此 `refresh` 携带 `selectedProfile` 一律回 `400 IllegalArgumentException`（规范中该操作要求原令牌未绑定角色）。
 - **进服暗号**：`serverId` 由服务端下发，`hasJoined` 核对一次即作废，所以不能重复调用（防重放）；`join` 时记下客户端 IP，`hasJoined` 带了 `ip` 就比对，对不上也算不通过。
 - **错误**：业务异常按规范返回 `403` + `{"error": "ForbiddenOperationException", "errorMessage": "..."}`（令牌无效 `Invalid token.`、凭据不对 `Invalid credentials. Invalid username or password.`）；一般 HTTP 异常的 `error` 取状态码的 Reason Phrase。
-- **贴图**：`textures` 属性 = `base64(JSON)`，`SKIN.url` 指向 [3.4 /asset/{asset_id}](#34-assetasset_id)（内容寻址、公开只读，客户端直接拉）；`model_type` 映射到 `metadata.model`：`steve` → `default`、`alex` → `slim`、`share` → 不带 metadata（交给客户端判断）；`unsigned=false` 时用 **RSA-SHA1** 对 base64 串签名，公钥即根元数据里的 `signaturePublickey`，私钥落在 `DATA_DIR/private.pem`（首次启动生成 4096 位）。
+- **贴图**：`textures` 属性 = `base64(JSON)`，`SKIN.url` 指向 [3.4 /asset/{asset_id}](#34-assetasset_id)（内容寻址、公开只读，客户端直接拉）；`kind` 映射到 `metadata.model`：`skin.steve` → `default`（正常手臂宽度）、`skin.alex` → `slim`（细手臂），`cape` 本就不是皮肤、不带 metadata；`unsigned=false` 时用 **RSA-SHA1** 对 base64 串签名，公钥即根元数据里的 `signaturePublickey`，私钥落在 `DATA_DIR/private.pem`（首次启动生成 4096 位）。
 - **与站点登录的关系**：两套 token 互不相通 —— 站点 token 是 HMAC（密钥每次启动随机，重启即全部失效）；Yggdrasil 的 `accessToken` 是随机数、也只活在内存里。管理员在 `/maintain` 动过某个账号（删号 / 改 UUID / 改凭据）时，会按 uuid 把这个账号的 Yggdrasil 会话一并清掉。
 - **防爆破**：应用侧不做限流；`authenticate` / `signout` 依靠恒定请求时间 —— 无论账号存不存在，每次请求都至少消耗 1 秒才返回（[5.3 防爆破与加固措施](#53-防爆破与加固措施)），单个客户端的串行请求频率因此不超过 60 次/分钟。更严格的频率上限由反向代理承担（[1.4](#14-反向代理)）。
 - **profile 与签名细节**：`authenticate` 带 `requestUser=true` 时响应另含 `user`；profile 的 `id` 为无横线 UUID，接口亦接受带横线写法，角色不存在回 `204` 而非 `403`；`unsigned` 默认 `true`（不带签名），仅显式 `unsigned=false` 时签名。textures 属性为 `base64(JSON)`，含 `timestamp`（Java 毫秒）、`profileId`、`profileName`；签名算法为 RSA-SHA1 + PKCS1v15，密钥对落在 `DATA_DIR/private.pem`（PKCS#8）与 `public.pem`（PKIX），首次启动以标准库 `crypto/rsa` 生成 4096 位后复用
@@ -189,11 +195,11 @@ flowchart LR
 | POST   | `/api/auth/login`                | 公开         | 账号密码换 token                                                  |
 | GET    | `/api/auth/session`              | Bearer       | 校验 token 是否有效，返回当前账号                                 |
 | GET    | `/api/tags`                      | Bearer       | 库里已有标签 + 使用次数                                           |
-| GET    | `/api/library`                   | Bearer       | 列表（`kind` / `tab` / `q`）+ 统计                                |
-| POST   | `/api/precheck`                  | Bearer       | 上传前预检：请求体带原图（base64），服务端自己校验并算 `asset_id` |
-| POST   | `/api/skins`                     | Bearer       | 上传贴图，或覆盖已有贴图的标签 / 模型                             |
+| GET    | `/api/library`                   | Bearer       | 列表（`category` / `tab` / `q`）+ 统计                            |
+| POST   | `/api/precheck`                  | Bearer       | 上传前预检：请求体 `{kind, data}`（`data` 是原图 base64），服务端校验并算 `asset_id` |
+| POST   | `/api/skins`                     | Bearer       | 上传贴图（multipart：`file` / `kind` / `tags`），或覆盖已有贴图的标签与 kind |
 | POST   | `/api/items/{asset_id}/favorite` | Bearer       | 切换收藏                                                          |
-| DELETE | `/api/items/{asset_id}`          | Bearer       | 删除贴图（内置资源不可删）                                        |
+| DELETE | `/api/items/{asset_id}`          | Bearer       | 删除贴图（只读资源不可删）                                        |
 | GET    | `/api/me`                        | Bearer       | 当前账号 + 装备中的皮肤 / 披风                                    |
 | POST   | `/api/me/equip`                  | Bearer       | 装备某个贴图                                                      |
 | GET    | `/api/admin/users`               | Bearer admin | 账号列表                                                          |
@@ -201,7 +207,9 @@ flowchart LR
 | PATCH  | `/api/admin/users/{uuid}`        | Bearer admin | 改 UUID / 账号名 / 密码 / 游戏内名称 / 身份组                     |
 | DELETE | `/api/admin/users/{uuid}`        | Bearer admin | 删除账号                                                          |
 
-贴图条目（asset）的统一字段：`id`（= 规范化后字节的 sha256，见 [4.2 表：asset](#42-表asset)）、`kind`、`model`、`tags`、`upload_at`、`is_builtin`、`width`、`height`、`size`、`favorite`、`texture_url`（= `/asset/{id}`）。
+贴图条目（asset）的统一字段：`id`（= 规范化后字节的 sha256，见 [4.2 表：asset](#42-表asset)）、`kind`（`skin.steve` / `skin.alex` / `cape`，模型已并进这一列）、`category`（由 `kind` 推出的粗分类 `skin` / `cape`，列表筛选与前端分类用它）、`tags`、`upload_at`、`readonly`、`width`、`height`、`size`、`favorite`、`texture_url`（= `/asset/{id}`）。
+
+写接口的身份组要求：`/api/skins` 要 `admin` / `normal`，`/api/items/{asset_id}/favorite` 与 `/api/me/equip` 同样要 `admin` / `normal`（`guest` 只读，见 [5.1](#51-身份组)），`DELETE /api/items/{asset_id}` 与 `/api/admin/*` 要 `admin`。
 
 ### 3.7. /static/*
 
@@ -213,48 +221,46 @@ flowchart LR
 
 ### 4.1. 表：user
 
-| 字段          | 类型    | 约束       | 说明                                                  |
-| ------------- | ------- | ---------- | ----------------------------------------------------- |
-| id            | INTEGER | 自增主键   | 业务无关主键                                          |
-| uuid          | TEXT    | 唯一，非空 | 用户 UUID，定长 32 位小写字母 + 数字组合              |
-| role          | TEXT    | 非空       | 用于身份组，枚举量：admin / normal / guest            |
-| player_name   | TEXT    | 唯一，非空 | 游戏内角色名，最大长度 16，仅允许小写字母+下划线+数字 |
-| username      | TEXT    | 唯一，非空 | 账号登录名                                            |
-| password_hash | TEXT    | 唯一，非空 | 账号登录密码                                          |
-| skin          | TEXT    | 非空       | 装备的皮肤，空串表示未装备                            |
-| cape          | TEXT    | 非空       | 装备的披风，空串表示未装备                            |
+| 字段            | 类型    | 约束       | 说明                                                  |
+| --------------- | ------- | ---------- | ----------------------------------------------------- |
+| `id`            | INTEGER | 自增主键   | 业务无关主键                                          |
+| `uuid`          | TEXT    | 唯一，非空 | 用户 UUID，定长 32 位小写字母 + 数字组合              |
+| `role`          | TEXT    | 非空       | 用于身份组，枚举量：admin / normal / guest            |
+| `player_name`   | TEXT    | 唯一，非空 | 游戏内角色名，最大长度 16，仅允许小写字母+下划线+数字 |
+| `username`      | TEXT    | 唯一，非空 | 账号登录名                                            |
+| `password_hash` | TEXT    | 唯一，非空 | 账号登录密码                                          |
+| `skin`          | TEXT    | 非空       | 装备的皮肤，空串表示未装备                            |
+| `cape`          | TEXT    | 非空       | 装备的披风，空串表示未装备                            |
 
 - `password_hash` 使用 Argon2id 算法进行哈希，默认取 `m=19456 (19 MiB), t=2, p=1`（PHC 串：`$argon2id$v=19$m=…,t=…,p=…$<salt>$<hash>`，salt 与摘要为无填充 base64）
 - 密码长度 8 ~ 256 个字符（下限只起提醒作用）
 
 ### 4.2. 表：asset
 
-| 字段       | 类型    | 约束       | 说明                                   |
-| ---------- | ------- | ---------- | -------------------------------------- |
-| id         | INTEGER | 自增主键   | 业务无关主键                           |
-| asset_id   | TEXT    | 唯一，非空 | 资源 ID，见下方说明                    |
-| category   | TEXT    | 非空       | 枚举量：skin / cape                    |
-| model_type | TEXT    | 非空       | 枚举量：share / steve / alex           |
-| is_builtin | INTEGER | 非空       | 指示资源是否为内置资源（用户无法编辑） |
-| upload_at  | INTEGER | 非空       | 资源上传时间，采用 UNIX 秒级时间戳     |
-| tags       | TEXT    | 非空       | 资源的标签，使用 json 字符串列表存储   |
-| data       | BLOB    | 非空       | 资源文件的二进制数据                   |
+| 字段        | 类型    | 约束       | 说明                                   |
+| ----------- | ------- | ---------- | -------------------------------------- |
+| `id`        | INTEGER | 自增主键   | 业务无关主键                           |
+| `asset_id`  | TEXT    | 唯一，非空 | 资源 ID，见下方说明                    |
+| `kind`      | TEXT    | 非空       | 枚举串：skin.steve / skin.alex / cape  |
+| `readonly`  | INTEGER | 非空       | 指示资源是否为只读资源（用户无法编辑） |
+| `upload_at` | INTEGER | 非空       | 资源上传时间，采用 UNIX 秒级时间戳     |
+| `tags`      | TEXT    | 非空       | 资源的标签，使用 json 字符串列表存储   |
+| `data`      | BLOB    | 非空       | 资源文件的二进制数据                   |
 
-- 当 `category` 为 cape 时，`model_type` 应取 `share`（表示通用）
-- 除 `favorite` 的唯一索引外不额外建索引：库小，列表查询本来就要全表扫一遍再按 `upload_at` 排序，按 `category` / `model_type` 建索引收益有限，反而带来写放大
+- 除 `favorite` 的唯一索引外不额外建索引：库小，列表查询本来就要全表扫一遍再按 `upload_at` 排序，按 `kind` 建索引收益有限，反而带来写放大
 - `tags` 最多 16 个，单条最长 64 字符（见 [5.2 校验边界](#52-校验边界)）
 - `asset_id` 与 `data` 的关系：上传/内置的 PNG 先**解码再重新编码**（去掉 PNG 中与位图无关的 chunk），重新编码后的字节才是 `data`；`asset_id` = 这串字节的 sha256。所以它不再是「上传文件本身的 sha256」——同一个角色像素、不同元数据的两个文件会落到同一条资源上，客户端也不该自己算这个 ID（预检会把它回给前端）。
-- 库内预置 9 个官方默认皮肤（Ari / Kai / Steve / Sunny / Zuri 取 wide = steve，Alex / Efe / Makena / Noor 取 slim = alex），`is_builtin = 1`：不可删除（接口 `400`），但可收藏、装备与搜索；启动时按 manifest 对齐（缺者补入、多余变体删除），用户数据不受影响
+- 库内预置 9 个官方默认皮肤（Ari / Kai / Steve / Sunny / Zuri 取 wide = `skin.steve`，Alex / Efe / Makena / Noor 取 slim = `skin.alex`），`readonly = 1`：不可删除（接口 `400`），但可收藏、装备与搜索；启动时按 manifest 对齐（缺者补入、多余变体删除），用户数据不受影响
 - 内置资源的 `upload_at` 使用固定基准时间，因此始终排在用户上传之后
 - 列表里的 `width` / `height` 不占列：查询时只取 BLOB 前 24 字节（PNG IHDR）现算，省掉两列与它们的同步问题
 
 ### 4.3. 表：favorite
 
-| 字段   | 类型    | 约束     | 说明         |
-| ------ | ------- | -------- | ------------ |
-| id     | INTEGER | 自增主键 | 业务无关主键 |
-| player | TEXT    | 非空     | 用户 UUID    |
-| asset  | TEXT    | 非空     | 皮肤 Id      |
+| 字段     | 类型    | 约束     | 说明         |
+| -------- | ------- | -------- | ------------ |
+| `id`     | INTEGER | 自增主键 | 业务无关主键 |
+| `player` | TEXT    | 非空     | 用户 UUID    |
+| `asset`  | TEXT    | 非空     | 皮肤 Id      |
 
 - 唯一索引：`(player, asset)`
 - 修改 `user.uuid` 时一并更新 `favorite.player` 中指向旧 uuid 的行（无外键，由代码保证）
@@ -309,17 +315,20 @@ flowchart LR
 
 ### 5.1. 身份组
 
-| 身份   | 管理用户 | 更改皮肤 | 上传皮肤 | 删除资源 |
-| ------ | -------- | -------- | -------- | -------- |
-| guest  |          | ✅️        |          |          |
-| normal |          | ✅️        | ✅️        |          |
-| admin  | ✅️        | ✅️        | ✅️        | ✅️        |
+| 身份   | 浏览 / 预览 | 收藏 | 更换皮肤与披风 | 上传贴图 | 删除贴图 | 管理用户 |
+| ------ | ----------- | ---- | -------------- | -------- | -------- | -------- |
+| guest  | ✅️          |      |                |          |          |          |
+| normal | ✅️          | ✅️   | ✅️             | ✅️       |          |          |
+| admin  | ✅️          | ✅️   | ✅️             | ✅️       | ✅️       | ✅️       |
+
+`guest` 是**只读身份组**：不允许修改任何持久化资源 —— 收藏、更换装备、上传、删除都要求 `admin` / `normal`（闸门是 `currentWriter` / `currentAdmin`，回 `403` + `auth.write` / `auth.admin`）；读接口（列表、标签、`/api/me`、预检、`/asset/*`）不受限。
 
 `role` 每次请求现查库，改动立即生效：已发出的 token 不因此作废，但下一次请求即被 `403` 挡下。最后一个管理员不可删除、不可降级。
 
 ### 5.2. 校验边界
 
 - 请求体上限 1 MiB：Content-Length 预校验 + `MaxBytesReader` 兜底，分块读达到上限直接返回 400；
+- `kind` 只接受 `skin.steve` / `skin.alex` / `cape`，模型已并进这一列（没有「自动判断」这一档，由前端判定后显式提交）；
 - 贴图入库前只校验 PNG 头、尺寸与能否解码，不做内容审核；入库前**解码后重新编码**（剥掉 PNG 里与位图无关的 chunk），`asset_id` 取的就是这串入库字节的 sha256；
 
 | 资源类型 | 要求                      | 体积上限 |
@@ -343,14 +352,14 @@ flowchart LR
 
 审计记录和其它日志一样流向 stdout，不落文件；每条都带远程 IP 与时间戳（RFC 3339，时区取 `TZ`）。
 
-| event | 额外字段 |
-| ----- | -------- |
-| `login` | `username`、`result`（`ok` / `denied`），成功时另有 `uuid` |
-| `user.create` | `actor`（操作者 uuid）、`uuid`、`username`、`player_name`、`role` |
-| `user.update` | `actor`、`uuid`、`was_uuid`、`username`、`changed`（改动字段名，不含密码本身） |
-| `user.delete` | `actor`、`uuid`、`username` |
-| `asset.upload` | `actor`、`asset_id`、`kind`、`model`、`size`、`result`（`created` / `updated` / `unchanged`） |
-| `asset.delete` | `actor`、`asset_id` |
+| event          | 额外字段                                                                                      |
+| -------------- | --------------------------------------------------------------------------------------------- |
+| `login`        | `username`、`result`（`ok` / `denied`），成功时另有 `uuid`                                    |
+| `user.create`  | `actor`（操作者 uuid）、`uuid`、`username`、`player_name`、`role`                             |
+| `user.update`  | `actor`、`uuid`、`was_uuid`、`username`、`changed`（改动字段名，不含密码本身）                |
+| `user.delete`  | `actor`、`uuid`、`username`                                                                   |
+| `asset.upload` | `actor`、`asset_id`、`kind`、`size`、`result`（`created` / `updated` / `unchanged`） |
+| `asset.delete` | `actor`、`asset_id`                                                                           |
 
 ### 5.5. 源 IP 与反向代理
 
@@ -362,10 +371,10 @@ flowchart LR
 
 两套凭据互不相通，且都只存在于内存：
 
-| 凭据                    | 形态                                                                     | 生命周期                   | 失效方式                                                                           |
-| ----------------------- | ------------------------------------------------------------------------ | -------------------------- | ---------------------------------------------------------------------------------- |
-| 站点 token              | `HMAC-SHA256(进程密钥, uuid + \x1F + 账号名 + \x1F + password_hash)`（`\x1F` 为 ASCII 单元分隔符；[3.6](#36-api)） | 不过期；进程重启即全部失效 | 改该账号的 uuid / 账号名 / 密码，或重启服务                                        |
-| Yggdrasil `accessToken` | 随机 32 位无横线 hex（[3.5](#35-apiyggdrasil)）                          | 30 天；进程重启即全部失效  | `invalidate`（单个）、`signout`（该账号全部）、`refresh`（被轮换的那个）、改动账号、同账号超过 8 个令牌时最旧的先被顶掉 |
+| 凭据                    | 形态                                                                                                               | 生命周期                   | 失效方式                                                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| 站点 token              | `HMAC-SHA256(进程密钥, uuid + \x1F + 账号名 + \x1F + password_hash)`（`\x1F` 为 ASCII 单元分隔符；[3.6](#36-api)） | 不过期；进程重启即全部失效 | 改该账号的 uuid / 账号名 / 密码，或重启服务                                                                             |
+| Yggdrasil `accessToken` | 随机 32 位无横线 hex（[3.5](#35-apiyggdrasil)）                                                                    | 30 天；进程重启即全部失效  | `invalidate`（单个）、`signout`（该账号全部）、`refresh`（被轮换的那个）、改动账号、同账号超过 8 个令牌时最旧的先被顶掉 |
 
 - **口令**：库中只保存 Argon2id 哈希（默认 `m=19456, t=2, p=1`）；失败一律「用户名或密码不正确」，不暴露账号是否存在。
 - **凭据变更即失效**：管理员改动某账号的 uuid / 账号名 / 密码后，该账号的站点 token 立即失效（内存 token 表按库中字段整表重算，同一进程内未被改动者不变）；其 Yggdrasil 会话一并清除，`/authserver/validate` 随即返回 `403`。删号与改 UUID 按 UUID 清，本次被改过的账号直接清。
@@ -390,4 +399,5 @@ flowchart LR
 | 前端用 Vue 全局构建、模板运行时编译           | 无 npm 与打包器，改完重新编译即可                                                           | 无法使用严格 CSP（需 `unsafe-eval`）                                          |
 | 日志不落文件、审计走 stdout                   | 由容器运行时统一轮转与收集                                                                  | 无内置查看入口                                                                |
 | 贴图管理自建，未实现规范的材质上传接口        | 上传流程需与本站的预检、标签、收藏联动                                                      | 角色属性不返回 `uploadableTextures`，第三方客户端无法直接修改材质             |
-| 每账号最多 8 个令牌，超出先吊销最旧的 | 规范要求服务端限制令牌数；内存表不能随登录次数无界增长 | 同一账号开第 9 个客户端时最早那个被静默登出，得重新 `authenticate` |
+| 每账号最多 8 个令牌，超出先吊销最旧的         | 规范要求服务端限制令牌数；内存表不能随登录次数无界增长                                      | 同一账号开第 9 个客户端时最早那个被静默登出，得重新 `authenticate`            |
+| 存活探针靠镜像里的 `curl` 执行                | podman 把 kube 的 httpGet 翻成在容器内执行的 `curl -f <url>`（失败即退出），装 curl 才能用 k8s 式探针 | 镜像多几个 MB 依赖；漏装即退化成每约 93 秒一次的重启循环（见 [3.3](#33-livez)） |

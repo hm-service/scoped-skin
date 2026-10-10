@@ -15,7 +15,6 @@ var (
 	JoinsTTL         = 30 * time.Second
 )
 
-// Session 是一条 Yggdrasil 会话：accessToken 绑定的角色。
 type Session struct {
 	PlayerUUID  string
 	ClientToken string
@@ -29,7 +28,6 @@ type Sessions struct {
 	byUser  map[string][]string // 角色 UUID -> 该账号颁出的 accessToken（按颁发顺序）
 }
 
-// NewSessions 造一张空会话表。
 func NewSessions() *Sessions {
 	return &Sessions{byToken: make(map[string]Session), byUser: make(map[string][]string)}
 }
@@ -92,7 +90,6 @@ func (s *Sessions) Delete(accessToken string) {
 	s.drop(accessToken)
 }
 
-// DeleteUser 吊销某个角色的全部令牌，返回吊销条数。
 func (s *Sessions) DeleteUser(playerUUID string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -104,7 +101,6 @@ func (s *Sessions) DeleteUser(playerUUID string) int {
 	return len(tokens)
 }
 
-// Count 返回某个角色当前有效的令牌数。
 func (s *Sessions) Count(playerUUID string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -144,12 +140,10 @@ type Joins struct {
 	byPlayer map[string]joinRecord
 }
 
-// NewJoins 造一张空的暗号表。
 func NewJoins() *Joins {
 	return &Joins{byPlayer: make(map[string]joinRecord)}
 }
 
-// Record 记下某个角色的进服暗号。
 func (j *Joins) Record(playerUUID, serverID, ip string) {
 	j.mu.Lock()
 	defer j.mu.Unlock()

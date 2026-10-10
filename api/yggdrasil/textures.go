@@ -10,12 +10,12 @@ import (
 	"scoped-skin/db"
 )
 
-// modelMetadata 把库里的 model_type 映射成规范里的材质模型：
-// steve → default（正常手臂宽度）、alex → slim（细手臂）；
-// share 表示「交给客户端自己判断」，所以不带 metadata。
+// modelMetadata 把库里的 kind 映射成规范里的材质模型：
+// skin.steve → default（正常手臂宽度）、skin.alex → slim（细手臂）；
+// cape 不是皮肤，本来就不带 metadata。
 var modelMetadata = map[string]string{
-	"steve": "default",
-	"alex":  "slim",
+	"skin.steve": "default",
+	"skin.alex":  "slim",
 }
 
 // 规范里材质信息的结构；把 texturePayload 整个 base64 之后就是 textures 属性的值。
@@ -64,8 +64,6 @@ func userInfoOf(user *db.User) *userInfo {
 	return &userInfo{ID: core.DashlessUUID(user.UUID), Properties: []property{}}
 }
 
-// texturesProperty 组装 textures 属性；signed 为真时用 RSA-SHA1 给它签名。
-//
 // 规范：签名算法为 SHA1withRSA，签的对象就是属性值（那串 base64）本身。
 func (s *Server) texturesProperty(r *http.Request, user *db.User, signed bool) (property, error) {
 	payload := texturePayload{
@@ -79,9 +77,9 @@ func (s *Server) texturesProperty(r *http.Request, user *db.User, signed bool) (
 		if err != nil {
 			return property{}, err
 		}
-		if item != nil && item.Kind == "skin" {
+		if item != nil && item.Category == "skin" {
 			entry := texture{URL: assetURL(r, item.ID)}
-			if model, ok := modelMetadata[item.Model]; ok {
+			if model, ok := modelMetadata[item.Kind]; ok {
 				entry.Metadata = &textureMetadata{Model: model}
 			}
 			payload.Textures["SKIN"] = entry
@@ -92,7 +90,7 @@ func (s *Server) texturesProperty(r *http.Request, user *db.User, signed bool) (
 		if err != nil {
 			return property{}, err
 		}
-		if item != nil && item.Kind == "cape" {
+		if item != nil && item.Category == "cape" {
 			payload.Textures["CAPE"] = texture{URL: assetURL(r, item.ID)}
 		}
 	}

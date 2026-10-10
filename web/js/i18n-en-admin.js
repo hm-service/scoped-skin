@@ -64,7 +64,6 @@ export const admin = {
   "32 位十六进制，可带横线": "32 hex digits, dashes allowed",
   "新密码": "New password",
   "留空不改": "Leave blank to keep",
-  "改 UUID / 账号 / 密码后，对方需要重新登录。": "UUID, account or password change requires sign in again",
   "保存": "Save",
   "保存中…": "Saving…",
   "取消": "Cancel",
@@ -72,7 +71,6 @@ export const admin = {
   // ── 维护页：增删改结果 ──────────────────────────────────────────
   "已保存": "Saved",
   "已退出管理员身份": "Admin role removed",
-  "凭据已改，请重新登录": "Credentials changed, sign in again",
   "删除用户「{name}」？不可撤销。": "Delete user “{name}”? Cannot be undone",
   "已删除「{name}」": "Deleted “{name}”",
 };

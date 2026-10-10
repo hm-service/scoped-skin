@@ -20,11 +20,10 @@ type Error struct {
 	Detail string `json:"detail"`
 }
 
-// Write 按给定状态码写一个 JSON 响应。
 func Write(w http.ResponseWriter, status int, payload any) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		slog.Error("JSON 序列化失败", slog.Any("error", err))
+		slog.Error("json encode failed", slog.Any("error", err))
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -33,12 +32,10 @@ func Write(w http.ResponseWriter, status int, payload any) {
 	w.Write(body)
 }
 
-// Fail 写一个站点 API 的错误体 {"detail": "..."}。
 func Fail(w http.ResponseWriter, status int, detail string) {
 	Write(w, status, Error{Detail: detail})
 }
 
-// Unauthorized 是 401 的固定写法（带 WWW-Authenticate）。
 func Unauthorized(w http.ResponseWriter, detail string) {
 	w.Header().Set("WWW-Authenticate", "Bearer")
 	Fail(w, http.StatusUnauthorized, detail)
@@ -71,15 +68,13 @@ func NewProxies(spec string) (*Proxies, error) {
 		}
 		addr, err := netip.ParseAddr(item)
 		if err != nil {
-			return nil, fmt.Errorf("可信代理 %q 既不是 IP 也不是 CIDR", item)
+			return nil, fmt.Errorf("trusted proxy %q is neither an IP nor a CIDR", item)
 		}
 		proxies.trusted = append(proxies.trusted, netip.PrefixFrom(addr, addr.BitLen()))
 	}
 	return proxies, nil
 }
 
-// ClientIP 返回客户端 IP（不含端口）。
-//
 // 对端不可信 → 直接用对端地址。对端可信 → 从 X-Forwarded-For 的**最右**开始往左走，
 // 跳过可信网段里的每一跳，第一个不可信的就是真正的客户端：反代用
 // `$proxy_add_x_forwarded_for` 时会把客户端自己伪造的部分拼在左边、把真实来源追加在右边，

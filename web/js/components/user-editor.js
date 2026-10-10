@@ -46,8 +46,6 @@ export const UserEditor = {
                    :placeholder="t('留空不改')">
           </label>
 
-          <p class="m-hint">{{ t("改 UUID / 账号 / 密码后，对方需要重新登录。") }}</p>
-
           <div class="form-actions">
             <button type="submit" class="primary-btn" :disabled="store.state.saving">
               <svg class="icon"><use href="#i-check"/></svg>

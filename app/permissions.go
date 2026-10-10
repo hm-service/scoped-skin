@@ -23,16 +23,16 @@ func hardenDataDir(dir string) error {
 		return nil
 	}
 	if err := os.Chmod(dir, core.DataDirPerm); err != nil {
-		return fmt.Errorf("收紧数据目录权限失败: %w", err)
+		return fmt.Errorf("tighten data dir permissions: %w", err)
 	}
 	for name, mode := range expectedPerm {
 		if err := core.TightenPerm(filepath.Join(dir, name), mode); err != nil {
-			return fmt.Errorf("收紧 %s 权限失败: %w", name, err)
+			return fmt.Errorf("tighten permissions on %s: %w", name, err)
 		}
 	}
 	for _, name := range []string{"app.db-wal", "app.db-shm"} {
 		if err := core.TightenPerm(filepath.Join(dir, name), core.SecretPerm); err != nil {
-			return fmt.Errorf("收紧 %s 权限失败: %w", name, err)
+			return fmt.Errorf("tighten permissions on %s: %w", name, err)
 		}
 	}
 	return nil
@@ -45,18 +45,18 @@ func checkDataDir(dir string) error {
 	}
 	info, err := os.Stat(dir)
 	if err != nil {
-		return fmt.Errorf("数据目录不可用: %w", err)
+		return fmt.Errorf("data dir unusable: %w", err)
 	}
 	if perm := info.Mode().Perm(); perm != core.DataDirPerm {
-		return fmt.Errorf("数据目录权限是 %o，应当是 %o", perm, core.DataDirPerm)
+		return fmt.Errorf("data dir mode is %o, want %o", perm, core.DataDirPerm)
 	}
 	for name, want := range expectedPerm {
 		info, err := os.Stat(filepath.Join(dir, name))
 		if err != nil {
-			return fmt.Errorf("%s 不可用: %w", name, err)
+			return fmt.Errorf("%s unusable: %w", name, err)
 		}
 		if perm := info.Mode().Perm(); perm != want {
-			return fmt.Errorf("%s 权限是 %o，应当是 %o", name, perm, want)
+			return fmt.Errorf("%s mode is %o, want %o", name, perm, want)
 		}
 	}
 	return nil

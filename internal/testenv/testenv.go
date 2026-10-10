@@ -146,7 +146,6 @@ func Do(handler http.Handler, method, target string, body any, token string) *ht
 	return recorder
 }
 
-// Decode 把响应体解析成 map，方便断言。
 func Decode(t *testing.T, recorder *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
 	payload := map[string]any{}
@@ -156,7 +155,6 @@ func Decode(t *testing.T, recorder *httptest.ResponseRecorder) map[string]any {
 	return payload
 }
 
-// DecodeInto 把响应体解析到给定结构里。
 func DecodeInto(t *testing.T, recorder *httptest.ResponseRecorder, target any) {
 	t.Helper()
 	if err := json.Unmarshal(recorder.Body.Bytes(), target); err != nil {

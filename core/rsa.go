@@ -25,7 +25,6 @@ type SigningKeys struct {
 	public  string
 }
 
-// LoadSigningKeys 读取已有密钥；没有就生成一对再落盘。
 func LoadSigningKeys(dataDir string) (*SigningKeys, error) {
 	if err := os.MkdirAll(dataDir, DataDirPerm); err != nil {
 		return nil, err
@@ -38,15 +37,15 @@ func LoadSigningKeys(dataDir string) (*SigningKeys, error) {
 	case err == nil:
 		block, _ := pem.Decode(raw)
 		if block == nil {
-			return nil, fmt.Errorf("私钥 %s 不是合法的 PEM", privatePath)
+			return nil, fmt.Errorf("private key %s is not valid PEM", privatePath)
 		}
 		parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 		if err != nil {
-			return nil, fmt.Errorf("解析私钥 %s 失败: %w", privatePath, err)
+			return nil, fmt.Errorf("parse private key %s: %w", privatePath, err)
 		}
 		key, ok := parsed.(*rsa.PrivateKey)
 		if !ok {
-			return nil, fmt.Errorf("私钥 %s 不是 RSA 密钥", privatePath)
+			return nil, fmt.Errorf("private key %s is not an RSA key", privatePath)
 		}
 		keys.private = key
 	case errors.Is(err, fs.ErrNotExist):
@@ -65,7 +64,7 @@ func LoadSigningKeys(dataDir string) (*SigningKeys, error) {
 	default:
 		// 读不动不等于没有：私钥存在却读不了时若静默换一对新密钥，已签发的 textures
 		// 签名会全部失效，公钥也会跟着变，所以这里直接失败。
-		return nil, fmt.Errorf("读取私钥 %s 失败: %w", privatePath, err)
+		return nil, fmt.Errorf("read private key %s: %w", privatePath, err)
 	}
 
 	// 公钥总是从私钥现推：磁盘上的那份只是给运维看的，不作数、也不会和私钥走岔。
@@ -91,8 +90,6 @@ func LoadSigningKeys(dataDir string) (*SigningKeys, error) {
 // PublicPEM 返回 PKIX 格式的公钥 PEM（根元数据的 signaturePublickey 字段）。
 func (k *SigningKeys) PublicPEM() string { return k.public }
 
-// Sign 对属性值做 RSA-SHA1 + PKCS1v15 签名，结果再 base64。
-//
 // 规范原文：签名算法为 SHA1withRSA；签的对象就是 textures 属性的值（那串 base64）。
 func (k *SigningKeys) Sign(value string) (string, error) {
 	digest := sha1.Sum([]byte(value))

@@ -163,7 +163,7 @@ func TestProfileCarriesCape(t *testing.T) {
 	if err := png.Encode(&buffer, canvas); err != nil {
 		t.Fatalf("编码披风 PNG 失败: %v", err)
 	}
-	cape, status, err := h.app.Store.AddUpload("cape", "share", []string{"披风"}, buffer.Bytes())
+	cape, status, err := h.app.Store.AddUpload("cape", []string{"披风"}, buffer.Bytes())
 	if err != nil || status != "created" {
 		t.Fatalf("入库披风失败: %q (%v)", status, err)
 	}
@@ -171,7 +171,7 @@ func TestProfileCarriesCape(t *testing.T) {
 	if err != nil || len(items) == 0 {
 		t.Fatalf("内置皮肤没灌进来: %v %d", err, len(items))
 	}
-	skinID := pickModel(t, items, "steve")
+	skinID := pickKind(t, items, "skin.steve")
 
 	steve := h.app.Store.UserByUsername("steve")
 	if status, err := h.app.Store.Equip(skinID, steve.UUID); err != nil || status != "ok" {
@@ -216,7 +216,7 @@ func TestTextureURLSchemeAndHost(t *testing.T) {
 	if err != nil || len(items) == 0 {
 		t.Fatalf("内置资源没灌进来: %v %d", err, len(items))
 	}
-	skinID := pickModel(t, items, "steve")
+	skinID := pickKind(t, items, "skin.steve")
 	steve := h.app.Store.UserByUsername("steve")
 	if status, err := h.app.Store.Equip(skinID, steve.UUID); err != nil || status != "ok" {
 		t.Fatalf("装备失败: %q (%v)", status, err)

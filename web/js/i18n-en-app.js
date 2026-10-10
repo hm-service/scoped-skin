@@ -113,7 +113,6 @@ export const app = {
   "继续": "Resume",
   "暂停": "Pause",
   "外层": "overlay",
-  "自动": "Auto",
   "站立": "Idle",
   "行走": "Walk",
   "奔跑": "Run",

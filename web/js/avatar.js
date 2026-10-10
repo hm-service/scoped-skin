@@ -24,8 +24,8 @@ const UV = {
 const SCALE = 8;
 
 /** 正面视图的绘制顺序：腿 → 身体 → 手臂 → 头，外层（overlay）紧随其后。 */
-function bodyParts(model) {
-  const slim = model === "alex";
+function bodyParts(kind) {
+  const slim = kind === "skin.alex";
   const armWidth = slim ? 3 : 4;
   const rightArmX = slim ? 1 : 0;
   const leftArmX = 12; // 经典与纤细模型的左臂都靠右贴边（纤细时只是窄 1 格）
@@ -45,7 +45,6 @@ function bodyParts(model) {
   ];
 }
 
-/** 加载一张图片，返回 HTMLImageElement。 */
 export function loadImage(url) {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -56,8 +55,7 @@ export function loadImage(url) {
   });
 }
 
-/** 把皮肤贴图渲染成 16×32 的正面小人。 */
-function drawSkinAvatar(canvas, image, model = "steve") {
+function drawSkinAvatar(canvas, image, kind) {
   const factor = image.naturalWidth / 64;
   canvas.width = 16 * SCALE;
   canvas.height = 32 * SCALE;
@@ -65,7 +63,7 @@ function drawSkinAvatar(canvas, image, model = "steve") {
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  for (const [rect, dx, dy] of bodyParts(model)) {
+  for (const [rect, dx, dy] of bodyParts(kind)) {
     const [x, y, w, h] = rect;
     if ((y + h) * factor > image.naturalHeight + 0.5) {
       continue; // 64×32 老格式没有下半张图，跳过缺失部件
@@ -133,11 +131,11 @@ export function detectModel(image) {
   return "alex";
 }
 
-/** 卡片 / 上传预览统一入口。 */
-export function renderPreview(canvas, image, kind, model) {
+/** 卡片 / 上传预览统一入口：kind 就是接口里的 skin.steve / skin.alex / cape。 */
+export function renderPreview(canvas, image, kind) {
   if (kind === "cape") {
     drawCapeAvatar(canvas, image);
   } else {
-    drawSkinAvatar(canvas, image, model);
+    drawSkinAvatar(canvas, image, kind);
   }
 }

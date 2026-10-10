@@ -16,7 +16,7 @@ const App = {
   components: { TopBar, ToastBox, SkinCard, StagePane, UploadPanel },
   setup() {
     const isActive = (item) =>
-      item.kind === "skin"
+      item.category === "skin"
         ? store.state.skin?.id === item.id
         : store.state.cape?.id === item.id;
 
@@ -41,7 +41,8 @@ const App = {
         <section class="panel" :aria-label="t('贴图库')">
           <div class="panel-head">
             <div class="tabs" role="tablist">
-              <button class="tab" role="tab" :class="{ on: store.state.tab === 'favorites' }"
+              <!-- guest 是只读身份组：收藏不了任何东西，这个 tab 只会是空的，直接不给它看 -->
+              <button v-if="store.canWrite" class="tab" role="tab" :class="{ on: store.state.tab === 'favorites' }"
                       @click="store.setTab('favorites')">
                 <svg class="icon"><use href="#i-star"/></svg>{{ t("我的收藏") }}
               </button>
@@ -58,12 +59,12 @@ const App = {
 
           <div class="library-body">
             <nav class="rail" :aria-label="t('类别')">
-              <button class="rail-btn" :class="{ on: store.state.kind === 'skin' }"
-                      @click="store.setKind('skin')">
+              <button class="rail-btn" :class="{ on: store.state.category === 'skin' }"
+                      @click="store.setCategory('skin')">
                 <svg class="icon"><use href="#i-skin"/></svg>{{ t("皮肤") }}
               </button>
-              <button class="rail-btn" :class="{ on: store.state.kind === 'cape' }"
-                      @click="store.setKind('cape')">
+              <button class="rail-btn" :class="{ on: store.state.category === 'cape' }"
+                      @click="store.setCategory('cape')">
                 <svg class="icon"><use href="#i-cape"/></svg>{{ t("披风") }}
               </button>
             </nav>
@@ -89,7 +90,7 @@ const App = {
               <div class="grid" id="grid" role="list"
                    v-if="!store.uploading && store.state.items.length">
                 <SkinCard v-for="item in store.state.items" :key="item.id" :item="item"
-                          :active="isActive(item)" :deletable="store.canDelete"
+                          :active="isActive(item)" :writable="store.canWrite" :deletable="store.canDelete"
                           @select="store.select(item)"
                           @favorite="store.toggleFavorite(item)" @remove="store.remove(item)"/>
               </div>

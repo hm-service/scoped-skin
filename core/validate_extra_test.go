@@ -14,14 +14,14 @@ import (
 func TestNormalizeTextureIsFixedPoint(t *testing.T) {
 	original := pngBytes(t, core.SkinSize, core.SkinSize)
 
-	first, width, height, err := core.NormalizeTexture("skin", original)
+	first, width, height, err := core.NormalizeTexture("skin.steve", original)
 	if err != nil {
 		t.Fatalf("规范化失败: %v", err)
 	}
 	if width != core.SkinSize || height != core.SkinSize {
 		t.Fatalf("尺寸 = %d×%d，想要 %d×%d", width, height, core.SkinSize, core.SkinSize)
 	}
-	second, _, _, err := core.NormalizeTexture("skin", first)
+	second, _, _, err := core.NormalizeTexture("skin.steve", first)
 	if err != nil {
 		t.Fatalf("二次规范化失败: %v", err)
 	}
@@ -41,21 +41,18 @@ func TestNormalizeTextureIsFixedPoint(t *testing.T) {
 
 // 上限按**字符**算而不是字节：多字节字符正好到上限要能过，多一个字符才被拒。
 func TestFieldLimitsCountRunesNotBytes(t *testing.T) {
-	// 账号名：32 个汉字（96 字节）应当通过，33 个字符被拒
 	if _, err := core.NormalizeUsername(strings.Repeat("汉", core.MaxUsernameLength)); err != nil {
 		t.Errorf("%d 个字符的账号名应当通过: %v", core.MaxUsernameLength, err)
 	}
 	if _, err := core.NormalizeUsername(strings.Repeat("汉", core.MaxUsernameLength+1)); err == nil {
 		t.Errorf("%d 个字符的账号名应当被拒", core.MaxUsernameLength+1)
 	}
-	// 密码：正好 256 个多字节字符通过，257 个被拒
 	if _, err := core.NormalizePassword(strings.Repeat("密", core.MaxPasswordLength)); err != nil {
 		t.Errorf("%d 个字符的密码应当通过: %v", core.MaxPasswordLength, err)
 	}
 	if _, err := core.NormalizePassword(strings.Repeat("密", core.MaxPasswordLength+1)); err == nil {
 		t.Errorf("%d 个字符的密码应当被拒", core.MaxPasswordLength+1)
 	}
-	// 标签：0 个合法；正好 64 个字符（192 字节）通过，65 个被拒
 	if tags, err := core.NormalizeTags(nil); err != nil || len(tags) != 0 {
 		t.Errorf("0 个标签应当通过且回空: %v (%v)", tags, err)
 	}

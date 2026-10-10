@@ -121,7 +121,7 @@ func TestUpdateUserNoOpChanges(t *testing.T) {
 // 装备披风要写 cape 列、不碰 skin 列（Equip 按 asset 的 category 选列）。
 func TestEquipCapeGoesToCapeColumn(t *testing.T) {
 	store := openStore(t)
-	cape, status, err := store.AddUpload("cape", "share", nil, pngBytes(t, 64, 32))
+	cape, status, err := store.AddUpload("cape", nil, pngBytes(t, 64, 32))
 	if err != nil || status != "created" {
 		t.Fatalf("传披风失败: %q (%v)", status, err)
 	}
@@ -137,6 +137,45 @@ func TestEquipCapeGoesToCapeColumn(t *testing.T) {
 	if after.Skin != "" {
 		t.Errorf("装备披风不该动 skin 列: %q", after.Skin)
 	}
+}
+
+// 回归（重构后的统计口径）：asset 的 kind 有三个取值，Stats 必须把同一个粗分类下的
+// 所有 kind **相加**，而不是把 GROUP BY 出来的最后一组覆盖上去。
+// 夹具里皮肤同时有 skin.steve 与 skin.alex，所以「只留最后一组」一定会少算。
+func TestStatsAggregatesAllKindsOfACategory(t *testing.T) {
+	store := openStore(t)
+
+	skinItems, err := store.List("skin", "all", "", "")
+	if err != nil {
+		t.Fatalf("列皮肤失败: %v", err)
+	}
+	capeItems, err := store.List("cape", "all", "", "")
+	if err != nil {
+		t.Fatalf("列披风失败: %v", err)
+	}
+	// 夹具本身要能盯住这个 bug：两个皮肤 kind 都得有
+	if countKind(skinItems, "skin.steve") == 0 || countKind(skinItems, "skin.alex") == 0 {
+		t.Fatalf("夹具应当同时有 skin.steve 与 skin.alex: %+v", skinItems)
+	}
+
+	stats, err := store.Stats("")
+	if err != nil {
+		t.Fatalf("统计失败: %v", err)
+	}
+	if stats.Skins != len(skinItems) || stats.Capes != len(capeItems) {
+		t.Fatalf("Stats = %+v，想要 skins=%d capes=%d（按 category 汇总，而不是按 kind 覆盖）",
+			stats, len(skinItems), len(capeItems))
+	}
+}
+
+func countKind(items []db.Item, kind string) int {
+	count := 0
+	for _, item := range items {
+		if item.Kind == kind {
+			count++
+		}
+	}
+	return count
 }
 
 // 手工把 tags 改成非法 JSON（模拟改库 / 旧版本残留）之后，读取路径必须退化成空标签

@@ -59,7 +59,6 @@ func TestConcurrencyGivesUpWhenClientGoesAway(t *testing.T) {
 		<-block
 	}))
 
-	// 先把所有槽位占满
 	for range api.MaxConcurrentRequests {
 		go handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/library", nil))
 	}
@@ -118,4 +117,39 @@ func TestConcurrencySkipsStaticPaths(t *testing.T) {
 		}
 	}
 	close(block)
+}
+
+// 访问日志不记纯静态与存活探针（噪音），但页面与 /api/* 照记。
+func TestAccessLogSkipsStaticAndLivez(t *testing.T) {
+	_, handler := newSite(t)
+	read := captureLogs(t)
+
+	silent := []string{"/static/js/app.js", "/asset/" + strings.Repeat("a", 64), "/livez"}
+	for _, path := range silent {
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+	}
+	noisy := []string{"/auth", "/api/nope"}
+	for _, path := range noisy {
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+	}
+
+	logged := map[string]bool{}
+	for _, record := range read() {
+		if record["msg"] != "HTTP Request" {
+			continue
+		}
+		if path, ok := record["path"].(string); ok {
+			logged[path] = true
+		}
+	}
+	for _, path := range silent {
+		if logged[path] {
+			t.Errorf("%s 不该写访问日志", path)
+		}
+	}
+	for _, path := range noisy {
+		if !logged[path] {
+			t.Errorf("%s 应当写访问日志", path)
+		}
+	}
 }

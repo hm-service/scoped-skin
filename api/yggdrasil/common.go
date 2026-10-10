@@ -16,12 +16,10 @@ import (
 	"scoped-skin/httpx"
 )
 
-// Server 把应用容器接到 Yggdrasil 端点上。
 type Server struct {
 	App *app.App
 }
 
-// New 造一个 Yggdrasil 服务。
 func New(instance *app.App) *Server { return &Server{App: instance} }
 
 // ErrorResponse 是规范里的错误体。一般 HTTP 异常只填 Error（取状态码的 Reason Phrase），
@@ -65,7 +63,7 @@ func notFound(w http.ResponseWriter, r *http.Request) {
 }
 
 func internalError(w http.ResponseWriter, err error) {
-	slog.Error("Yggdrasil 内部错误", slog.Any("error", err))
+	slog.Error("yggdrasil internal error", slog.Any("error", err))
 	sendError(w, http.StatusInternalServerError, "Internal Server Error", "")
 }
 

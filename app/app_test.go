@@ -83,7 +83,7 @@ func TestFirstStartGeneratesPasswordWhenUnset(t *testing.T) {
 		}
 		message, _ := record["msg"].(string)
 		// 只认「随机生成」那条：设了 ADMIN_PASSWORD 的用例也会打 username=admin，但没有密码字段
-		if strings.Contains(message, "已生成管理员账号") {
+		if strings.Contains(message, "generated admin account") {
 			password, _ = record["password"].(string)
 		}
 	}

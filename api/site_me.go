@@ -7,8 +7,6 @@ import (
 	"scoped-skin/httpx"
 )
 
-// mePayload 组 /api/me 与 /api/me/equip 共用的响应体：当前账号 + 装备中的皮肤 / 披风。
-//
 // skin / cape 是完整贴图条目，没装备就是 null（Python 版同理：只有装了才去查库）。
 func (s *Server) mePayload(user *db.User) (map[string]any, error) {
 	payload := map[string]any{"player": publicUser(user)}
@@ -34,7 +32,6 @@ func (s *Server) mePayload(user *db.User) (map[string]any, error) {
 	return payload, nil
 }
 
-// handleMe 返回当前登录用户 + 他装备中的皮肤 / 披风。
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	user := s.currentUser(w, r)
 	if user == nil {
@@ -48,9 +45,9 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	httpx.Write(w, http.StatusOK, payload)
 }
 
-// handleEquip 把一张贴图设为当前装备的皮肤 / 披风。
+// handleEquip 把一张贴图设为当前装备的皮肤 / 披风。装备状态落在 user 行上，所以走写闸门。
 func (s *Server) handleEquip(w http.ResponseWriter, r *http.Request) {
-	user := s.currentUser(w, r)
+	user := s.currentWriter(w, r)
 	if user == nil {
 		return
 	}

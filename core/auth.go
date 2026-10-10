@@ -41,7 +41,6 @@ func HashPassword(password string) (string, error) {
 		phcBase64.EncodeToString(salt), phcBase64.EncodeToString(key)), nil
 }
 
-// VerifyPassword 校验明文与库里存的哈希串是否匹配；不匹配或哈希串损坏都返回 false。
 func VerifyPassword(password, passwordHash string) bool {
 	parts := strings.Split(passwordHash, "$")
 	if len(parts) != 6 || parts[0] != "" || parts[1] != "argon2id" {
@@ -83,11 +82,10 @@ func SleepUntil(start time.Time, min time.Duration) {
 	}
 }
 
-// RandomBytes 生成 size 字节的随机数（HMAC 密钥、盐都从这里来）。
 func RandomBytes(size int) ([]byte, error) {
 	buffer := make([]byte, size)
 	if _, err := rand.Read(buffer); err != nil {
-		return nil, fmt.Errorf("随机数不可用: %w", err)
+		return nil, fmt.Errorf("random source unavailable: %w", err)
 	}
 	return buffer, nil
 }

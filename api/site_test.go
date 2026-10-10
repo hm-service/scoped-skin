@@ -25,7 +25,6 @@ import (
 	"scoped-skin/internal/testenv"
 )
 
-// newSite 起一套独立实例 + 带中间件的完整处理器。
 func newSite(t *testing.T) (*app.App, http.Handler) {
 	t.Helper()
 	instance := testenv.New(t)
@@ -53,7 +52,6 @@ func captureLogs(t *testing.T) func() []map[string]any {
 	}
 }
 
-// loggedIP 挑出访问日志里某条路径的 ip 字段。
 func loggedIP(t *testing.T, records []map[string]any, path string) string {
 	t.Helper()
 	for index := len(records) - 1; index >= 0; index-- {
@@ -134,7 +132,6 @@ func detail(t *testing.T, recorder *httptest.ResponseRecorder) string {
 	return value
 }
 
-// object 从 JSON 对象里取一个子对象，缺失就失败。
 func object(t *testing.T, parent map[string]any, key string) map[string]any {
 	t.Helper()
 	child, ok := parent[key].(map[string]any)
@@ -144,10 +141,9 @@ func object(t *testing.T, parent map[string]any, key string) map[string]any {
 	return child
 }
 
-// firstItem 取 /api/library 里的第一条贴图条目。
-func firstItem(t *testing.T, handler http.Handler, token, kind string) map[string]any {
+func firstItem(t *testing.T, handler http.Handler, token, category string) map[string]any {
 	t.Helper()
-	recorder := testenv.Do(handler, http.MethodGet, "/api/library?kind="+kind, nil, token)
+	recorder := testenv.Do(handler, http.MethodGet, "/api/library?category="+category, nil, token)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("GET /api/library 状态码 = %d，想要 200（%s）", recorder.Code, recorder.Body.String())
 	}
@@ -162,20 +158,19 @@ func firstItem(t *testing.T, handler http.Handler, token, kind string) map[strin
 	return item
 }
 
-// builtinItem 取一条内置资源（按设计不能被删除 / 修改）。
-func builtinItem(t *testing.T, handler http.Handler, token, kind string) map[string]any {
+func builtinItem(t *testing.T, handler http.Handler, token, category string) map[string]any {
 	t.Helper()
-	recorder := testenv.Do(handler, http.MethodGet, "/api/library?kind="+kind, nil, token)
+	recorder := testenv.Do(handler, http.MethodGet, "/api/library?category="+category, nil, token)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("GET /api/library 状态码 = %d，想要 200", recorder.Code)
 	}
 	items, _ := testenv.Decode(t, recorder)["items"].([]any)
 	for _, raw := range items {
-		if item, ok := raw.(map[string]any); ok && item["is_builtin"] == true {
+		if item, ok := raw.(map[string]any); ok && item["readonly"] == true {
 			return item
 		}
 	}
-	t.Fatalf("库里没有内置资源: %s", recorder.Body.String())
+	t.Fatalf("库里没有只读的内置资源: %s", recorder.Body.String())
 	return nil
 }
 
@@ -268,8 +263,8 @@ func TestAuthGate(t *testing.T) {
 		if recorder.Code != http.StatusForbidden {
 			t.Fatalf("状态码 = %d，想要 403（%s）", recorder.Code, recorder.Body.String())
 		}
-		if got := detail(t, recorder); got != "当前身份组不能上传贴图" {
-			t.Errorf("detail = %q，想要 %q", got, "当前身份组不能上传贴图")
+		if got := detail(t, recorder); got != "当前身份组是只读的，不能修改任何资源" {
+			t.Errorf("detail = %q，想要 %q", got, "当前身份组是只读的，不能修改任何资源")
 		}
 	})
 
@@ -290,8 +285,8 @@ func TestAuthGate(t *testing.T) {
 		if recorder.Code != http.StatusBadRequest {
 			t.Fatalf("状态码 = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
 		}
-		if got := detail(t, recorder); got != "内置资源不能删除" {
-			t.Errorf("detail = %q，想要 %q", got, "内置资源不能删除")
+		if got := detail(t, recorder); got != "只读资源不能删除" {
+			t.Errorf("detail = %q，想要 %q", got, "只读资源不能删除")
 		}
 	})
 }
@@ -304,8 +299,7 @@ func TestUploadSkin(t *testing.T) {
 
 	// 首次上传：201 + created
 	recorder := doUpload(t, handler, token, [][2]string{
-		{"kind", "skin"},
-		{"model", "share"},
+		{"kind", "skin.steve"},
 		{"tags", "冒烟"},
 		{"tags", "64x64"},
 	}, "skin.png", data)
@@ -326,10 +320,9 @@ func TestUploadSkin(t *testing.T) {
 		t.Errorf("/asset/%s 的字节 sha256 = %s", assetID, got)
 	}
 
-	// 同一份内容改标签：只覆盖那一条，updated
+	// 同一份内容改标签与 kind：只覆盖那一条，updated
 	recorder = doUpload(t, handler, token, [][2]string{
-		{"kind", "skin"},
-		{"model", "alex"},
+		{"kind", "skin.alex"},
 		{"tags", "改过的标签"},
 	}, "skin-again.png", data)
 	if recorder.Code != http.StatusCreated {
@@ -339,8 +332,8 @@ func TestUploadSkin(t *testing.T) {
 	if payload["created"] != false || payload["updated"] != true {
 		t.Errorf("created/updated = %v/%v，想要 false/true", payload["created"], payload["updated"])
 	}
-	if payload["model"] != "alex" {
-		t.Errorf("model = %v，想要 alex", payload["model"])
+	if payload["kind"] != "skin.alex" || payload["category"] != "skin" {
+		t.Errorf("kind/category = %v/%v，想要 skin.alex/skin", payload["kind"], payload["category"])
 	}
 	tags, _ := payload["tags"].([]any)
 	if len(tags) != 1 || tags[0] != "改过的标签" {
@@ -348,7 +341,7 @@ func TestUploadSkin(t *testing.T) {
 	}
 
 	// 不是 PNG
-	recorder = doUpload(t, handler, token, [][2]string{{"kind", "skin"}},
+	recorder = doUpload(t, handler, token, [][2]string{{"kind", "skin.steve"}},
 		"bad.png", []byte("这显然不是一张 PNG 图片"))
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("非 PNG 状态码 = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
@@ -358,7 +351,7 @@ func TestUploadSkin(t *testing.T) {
 	}
 
 	// 头合法但体积超过上限：分块读到上限立刻 400
-	recorder = doUpload(t, handler, token, [][2]string{{"kind", "skin"}},
+	recorder = doUpload(t, handler, token, [][2]string{{"kind", "skin.steve"}},
 		"huge.png", oversizedPNG())
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("超大图片状态码 = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
@@ -384,7 +377,7 @@ func TestPrecheckValidatesPayload(t *testing.T) {
 	}
 
 	// 没上传过：200 + exists=false，并回服务端算的 asset_id
-	recorder := precheck(payloadFor("skin", data))
+	recorder := precheck(payloadFor("skin.steve", data))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("预检状态码 = %d，想要 200（%s）", recorder.Code, recorder.Body.String())
 	}
@@ -395,14 +388,14 @@ func TestPrecheckValidatesPayload(t *testing.T) {
 	}
 
 	// 上传之后同内容再预检：exists=true，并把库里那条带回来；两边的 ID 必须一致
-	recorder = doUpload(t, handler, token, [][2]string{{"kind", "skin"}}, "skin.png", data)
+	recorder = doUpload(t, handler, token, [][2]string{{"kind", "skin.steve"}}, "skin.png", data)
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("上传状态码 = %d，想要 201（%s）", recorder.Code, recorder.Body.String())
 	}
 	if uploaded := testenv.Decode(t, recorder); uploaded["id"] != assetID {
 		t.Errorf("上传得到的 id = %v，预检给的是 %s，两边必须一致", uploaded["id"], assetID)
 	}
-	recorder = precheck(payloadFor("skin", data))
+	recorder = precheck(payloadFor("skin.steve", data))
 	payload = testenv.Decode(t, recorder)
 	if payload["exists"] != true {
 		t.Fatalf("上传后预检 exists = %v，想要 true", payload["exists"])
@@ -413,7 +406,7 @@ func TestPrecheckValidatesPayload(t *testing.T) {
 
 	// 尺寸不对：服务端自己按规则拒（HD 皮肤）
 	hd := encodePNG(t, 128, 128)
-	recorder = precheck(payloadFor("skin", hd))
+	recorder = precheck(payloadFor("skin.steve", hd))
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("HD 皮肤预检状态码 = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
 	}
@@ -442,11 +435,11 @@ func TestPrecheckValidatesPayload(t *testing.T) {
 		body any
 		want string
 	}{
-		{"不是 PNG", payloadFor("skin", []byte("junk")), "不是有效的 PNG 图片"},
-		{"头合法但数据坏了", payloadFor("skin", []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 13, 'I', 'H', 'D', 'R', 0, 0, 0, 64, 0, 0, 0, 64}), "PNG 数据已损坏，无法解码"},
-		{"base64 坏了", map[string]any{"kind": "skin", "data": "这显然不是 base64"}, "图片数据不是合法的 base64"},
-		{"kind 不对", payloadFor("hat", data), "kind 只能是 skin 或 cape"},
-		{"内容为空", payloadFor("skin", nil), "不是有效的 PNG 图片"},
+		{"不是 PNG", payloadFor("skin.steve", []byte("junk")), "不是有效的 PNG 图片"},
+		{"头合法但数据坏了", payloadFor("skin.steve", []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 13, 'I', 'H', 'D', 'R', 0, 0, 0, 64, 0, 0, 0, 64}), "PNG 数据已损坏，无法解码"},
+		{"base64 坏了", map[string]any{"kind": "skin.steve", "data": "这显然不是 base64"}, "图片数据不是合法的 base64"},
+		{"kind 不对", payloadFor("hat", data), "kind 只能是 skin.steve / skin.alex / cape"},
+		{"内容为空", payloadFor("skin.steve", nil), "不是有效的 PNG 图片"},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -461,7 +454,7 @@ func TestPrecheckValidatesPayload(t *testing.T) {
 	}
 
 	// 没登录不允许预检
-	recorder = testenv.Do(handler, http.MethodPost, "/api/precheck", payloadFor("skin", data), "")
+	recorder = testenv.Do(handler, http.MethodPost, "/api/precheck", payloadFor("skin.steve", data), "")
 	if recorder.Code != http.StatusUnauthorized {
 		t.Errorf("未登录预检状态码 = %d，想要 401", recorder.Code)
 	}
@@ -699,8 +692,8 @@ func TestLanguageNegotiation(t *testing.T) {
 	}
 
 	// 默认（不带头）= 源语言：简体中文
-	recorder := call(http.MethodGet, "/api/library?kind=hat", "", nil, token)
-	if recorder.Code != http.StatusBadRequest || detail(t, recorder) != "kind 只能是 skin 或 cape" {
+	recorder := call(http.MethodGet, "/api/library?category=hat", "", nil, token)
+	if recorder.Code != http.StatusBadRequest || detail(t, recorder) != "category 只能是 skin 或 cape" {
 		t.Fatalf("默认语言 = %d %q", recorder.Code, detail(t, recorder))
 	}
 	if got := recorder.Header().Get("Content-Language"); got != "zh-Hans" {
@@ -711,8 +704,8 @@ func TestLanguageNegotiation(t *testing.T) {
 	}
 
 	// 英文
-	recorder = call(http.MethodGet, "/api/library?kind=hat", "en-US,en;q=0.9", nil, token)
-	if recorder.Code != http.StatusBadRequest || detail(t, recorder) != "kind must be skin or cape" {
+	recorder = call(http.MethodGet, "/api/library?category=hat", "en-US,en;q=0.9", nil, token)
+	if recorder.Code != http.StatusBadRequest || detail(t, recorder) != "category must be skin or cape" {
 		t.Fatalf("英文 = %d %q", recorder.Code, detail(t, recorder))
 	}
 	if got := recorder.Header().Get("Content-Language"); got != "en" {
@@ -835,29 +828,30 @@ func TestProbes(t *testing.T) {
 }
 
 // DESIGN.md 5.5：只有对端在 TRUSTED_PROXIES 里时才认反代头，访问日志里的 IP 跟着变。
+// 这里用 /auth 而不是 /livez —— 后者与静态资源刻意不写访问日志（DESIGN.md 1.3）。
 func TestClientIPFromTrustedProxy(t *testing.T) {
 	instance := testenv.NewWith(t, func(cfg *app.Config) { cfg.TrustedProxies = "192.0.2.1/32" })
 	handler := api.NewHandler(instance)
 
 	read := captureLogs(t)
-	request := httptest.NewRequest(http.MethodGet, "/livez", nil)
+	request := httptest.NewRequest(http.MethodGet, "/auth", nil)
 	request.RemoteAddr = "192.0.2.1:54321" // httptest 的默认对端，正好被标成可信
 	request.Header.Set("X-Forwarded-For", "198.51.100.7")
 	handler.ServeHTTP(httptest.NewRecorder(), request)
 
-	if ip := loggedIP(t, read(), "/livez"); ip != "198.51.100.7" {
+	if ip := loggedIP(t, read(), "/auth"); ip != "198.51.100.7" {
 		t.Fatalf("可信代理下日志里的 ip = %q，想要 198.51.100.7", ip)
 	}
 
 	// 对端不可信（默认配置）时，伪造的 XFF 一律不算数
 	_, plain := newSite(t)
 	read = captureLogs(t)
-	request = httptest.NewRequest(http.MethodGet, "/livez", nil)
+	request = httptest.NewRequest(http.MethodGet, "/auth", nil)
 	request.RemoteAddr = "203.0.113.9:54321"
 	request.Header.Set("X-Forwarded-For", "198.51.100.7")
 	plain.ServeHTTP(httptest.NewRecorder(), request)
 
-	if ip := loggedIP(t, read(), "/livez"); ip != "203.0.113.9" {
+	if ip := loggedIP(t, read(), "/auth"); ip != "203.0.113.9" {
 		t.Fatalf("不可信对端下日志里的 ip = %q，想要 203.0.113.9", ip)
 	}
 }
@@ -868,7 +862,7 @@ func TestTagLimits(t *testing.T) {
 	token := testenv.Token(t, instance, "admin")
 	png := encodePNG(t, core.SkinSize, core.SkinSize)
 
-	fields := [][2]string{{"kind", "skin"}}
+	fields := [][2]string{{"kind", "skin.steve"}}
 	for index := range core.MaxTagsPerAsset + 1 {
 		fields = append(fields, [2]string{"tags", "标签" + strconv.Itoa(index)})
 	}
@@ -881,7 +875,7 @@ func TestTagLimits(t *testing.T) {
 	}
 
 	recorder = doUpload(t, handler, token,
-		[][2]string{{"kind", "skin"}, {"tags", strings.Repeat("长", core.MaxTagLength+1)}},
+		[][2]string{{"kind", "skin.steve"}, {"tags", strings.Repeat("长", core.MaxTagLength+1)}},
 		"tag-too-long.png", png)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("超长标签状态码 = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
@@ -891,7 +885,7 @@ func TestTagLimits(t *testing.T) {
 	}
 
 	// 正好 16 个 × 64 字符应当能过
-	fields = [][2]string{{"kind", "skin"}, {"tags", strings.Repeat("长", core.MaxTagLength)}}
+	fields = [][2]string{{"kind", "skin.steve"}, {"tags", strings.Repeat("长", core.MaxTagLength)}}
 	for index := 1; index < core.MaxTagsPerAsset; index++ {
 		fields = append(fields, [2]string{"tags", "标签" + strconv.Itoa(index)})
 	}
@@ -908,17 +902,20 @@ func TestAssetChangesAreAudited(t *testing.T) {
 	token := testenv.Token(t, instance, "admin")
 	read := captureLogs(t)
 
-	recorder := doUpload(t, handler, token, [][2]string{{"kind", "skin"}, {"tags", "审计"}},
+	recorder := doUpload(t, handler, token, [][2]string{{"kind", "skin.steve"}, {"tags", "审计"}},
 		"audited.png", encodePNG(t, core.SkinSize, core.SkinSize))
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("上传状态码 = %d（%s）", recorder.Code, recorder.Body.String())
 	}
 	var uploaded struct {
-		ID    string `json:"id"`
-		Size  int    `json:"size"`
-		Model string `json:"model"`
+		ID   string `json:"id"`
+		Size int    `json:"size"`
+		Kind string `json:"kind"`
 	}
 	testenv.DecodeInto(t, recorder, &uploaded)
+	if uploaded.Kind != "skin.steve" {
+		t.Errorf("上传响应的 kind = %q，想要 skin.steve", uploaded.Kind)
+	}
 
 	recorder = testenv.Do(handler, http.MethodDelete, "/api/items/"+uploaded.ID, nil, token)
 	if recorder.Code != http.StatusOK {
@@ -935,7 +932,8 @@ func TestAssetChangesAreAudited(t *testing.T) {
 	if !ok {
 		t.Fatalf("没有 asset.upload 审计记录: %v", events)
 	}
-	if upload["actor"] != admin.UUID || upload["asset_id"] != uploaded.ID || upload["result"] != "created" {
+	if upload["actor"] != admin.UUID || upload["asset_id"] != uploaded.ID ||
+		upload["kind"] != "skin.steve" || upload["result"] != "created" {
 		t.Errorf("asset.upload 内容不对: %v", upload)
 	}
 	removed, ok := events["asset.delete"]

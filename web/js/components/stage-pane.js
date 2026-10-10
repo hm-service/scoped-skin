@@ -37,7 +37,7 @@ export const StagePane = {
       viewerRef.current = null;
     });
 
-    watch(() => [store.stageSkin?.texture_url, store.stageSkin?.model], loadSkin);
+    watch(() => [store.stageSkin?.texture_url, store.stageSkin?.kind], loadSkin);
     watch(() => store.stageCapeUrl, loadCape);
     watch(() => store.state.view.animation, (key) => viewerRef.current?.setAnimation(key));
     watch(() => store.state.view.paused, (paused) => viewerRef.current?.setPaused(paused));

@@ -8,7 +8,6 @@ import (
 	"scoped-skin/httpx"
 )
 
-// request 造一个带指定对端地址与头的请求。
 func request(remoteAddr string, headers map[string]string) *http.Request {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.RemoteAddr = remoteAddr

@@ -24,7 +24,6 @@ func initLogger() {
 func main() {
 	initLogger()
 
-	// 1. 应用容器：数据库 + 签名密钥 + 审计记录（首次启动顺带建管理员账号）
 	instance, err := app.Open(app.Config{
 		DataDir:        os.Getenv("DATA_DIR"),
 		Version:        version,
@@ -35,12 +34,12 @@ func main() {
 		ReadyzToken:    os.Getenv("READYZ_TOKEN"),
 	})
 	if err != nil {
-		slog.Error("初始化失败", slog.Any("error", err))
+		slog.Error("init failed", slog.Any("error", err))
 		os.Exit(1)
 	}
 	defer instance.Close()
 
-	// 2. 路由与监听（DESIGN.md 1.1：HOST / PORT）
+	// 路由与监听（DESIGN.md 1.1：HOST / PORT）
 	host := os.Getenv("HOST")
 	if host == "" {
 		host = "127.0.0.1"
@@ -54,13 +53,13 @@ func main() {
 		Handler:           api.NewHandler(instance),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	slog.Info("服务启动",
+	slog.Info("server started",
 		slog.String("addr", server.Addr),
 		slog.String("dataDir", instance.Config.DataDir),
 		slog.String("version", version),
 	)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		slog.Error("服务异常退出", slog.Any("error", err))
+		slog.Error("server exited with error", slog.Any("error", err))
 		os.Exit(1)
 	}
 }

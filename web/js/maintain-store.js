@@ -143,9 +143,9 @@ function createStore() {
       });
       applySnapshot(payload);
       state.editing = null;
+      // 改的是自己的凭据：旧 token 已经失效，直接回登录页
       if (selfEdit && credentialsChanged) {
-        toast(t("凭据已改，请重新登录"));
-        setTimeout(toLogin, 900);
+        toLogin();
         return;
       }
       if (selfEdit && editing.role !== "admin") {
