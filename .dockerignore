@@ -1,0 +1,23 @@
+.git/
+.github/
+.prototype/
+docs/
+shots/
+
+# 运行时数据（容器里由 VOLUME 提供）
+data/
+data_sample/
+
+# Go 缓存（本机 module cache 只读，缓存落在仓库里）
+.go-mod-cache/
+.go-build/
+
+# 参考项目（本地 clone，不纳入本仓库）
+ref/
+blessing-skin-server/
+
+# 编译产物
+scoped-skin
+
+# Dockerfile 里的产物名（本地手跑同名构建时会落在上下文里）
+app.bin

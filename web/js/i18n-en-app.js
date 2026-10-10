@@ -1,0 +1,136 @@
+/**
+ * 主应用（皮肤库 / 上传 / 3D 预览 / 顶栏）的英文文案。
+ *
+ * 键 = 源码里 `t("…")` 括号中的中文原文，必须一字不差；`{name}` 之类的占位符照抄。
+ * 漏翻或写错键由 `make i18n`（tools/check-i18n.mjs）检查。
+ */
+export const app = {
+  // 页面标题（i18n.js 会在 installI18n 时按当前语言写回 document.title）
+  "皮肤站 · Minecraft Skin Library": "Skin Library",
+  // 骨架与顶栏
+  "皮肤站": "Skin Library",
+  "切换到 {language}": "Switch to {language}",
+  "Minecraft Skin Library": "Minecraft Skin Library",
+  "用户管理": "User management",
+  "退出登录": "Sign out",
+
+  // 身份组
+  "管理员": "Admin",
+  "普通": "Normal",
+  "游客": "Guest",
+
+  // 顶栏计数 / 皮肤库骨架
+  "贴图库": "Textures",
+  "我的收藏": "Favorites",
+  "全部": "All",
+  "上传新皮肤": "Upload",
+  "上传新披风": "Upload",
+  "类别": "Category",
+  "皮肤": "skin",
+  "披风": "cape",
+  "全部皮肤": "All skins",
+  "收藏的皮肤": "Favorite skins",
+  "全部披风": "All capes",
+  "收藏的披风": "Favorite capes",
+  "搜索标签 · 空格分隔取交集": "Search tags · space-separated AND",
+  "清除": "Clear",
+  "载入中…": "Loading…",
+  "皮肤 {skins} · 披风 {capes} · 收藏 {favorites}": "Skins {skins} · Capes {capes} · Favorites {favorites}",
+  "筛出 {count} 个": "{count} filtered",
+  "{count} 个": "{count} total",
+
+  // 空状态
+  "没有同时带上": "No {noun} matching ",
+  "「{tag}」": "“{tag}”",
+  "的{noun}。": ".",
+  "还没有收藏{noun}。": "No favorite {noun} yet",
+  "点卡片右上角的星标收藏。": "Click the star on a card to favorite",
+  "{noun}库是空的": "The {noun} library is empty",
+  "，去「上传新皮肤」传一张。": ". Upload one",
+  "。": ".",
+
+  // 卡片
+  "收藏": "Favorite",
+  "取消收藏": "Unfavorite",
+  "删除": "Delete",
+  "无法加载": "Cannot load",
+  "内置": "Built-in",
+
+  // 上传面板
+  "标签": "Tags",
+  "已有": "Existing",
+  "暂无标签，直接输入创建": "No tags yet, type to create",
+  "模型": "Model",
+  "点击或拖入 PNG": "Click or drop a PNG",
+  "64×64 皮肤 / 64×32 披风": "64×64 skin / 64×32 cape",
+  "{size} · 正在校验…": "{size} · Checking…",
+  "{head} · 还没有上传过": "{head} · Not uploaded yet",
+  "{head} · 内置资源不可修改": "{head} · Built-in, read-only",
+  "无": "None",
+  "{head} · 已上传过 · 标签 {tags} · 模型 {model}": "{head} · Uploaded · Tags {tags} · Model {model}",
+  "上传": "Upload",
+  "文件不可用": "File not usable",
+  "校验中…": "Checking…",
+  "提交中…": "Submitting…",
+  "内置资源": "Built-in",
+  "保存修改": "Save changes",
+  "已上传": "Uploaded",
+  "先选一个 PNG 文件": "Pick a PNG first",
+  "只支持 PNG 文件": "PNG files only",
+  "贴图读取失败": "Texture load failed",
+  "校验失败": "Checking failed",
+  "已更新标签 / 模型": "Tags / model updated",
+  "上传成功": "Uploaded",
+  "当前身份组不能上传贴图": "This role cannot upload textures",
+  "只有管理员能删除资源": "Only admins can delete",
+
+  // 标签输入
+  "移除": "Remove",
+  "继续添加…": "Add more…",
+  "输入标签后回车，或从下拉选择": "Type a tag and press Enter, or pick below",
+  "没有匹配，回车新建": "No match, press Enter to create",
+  "新建标签 {tag}": "Create tag {tag}",
+  "{match}匹配 · 用过 {count} 次": "{match} match · used {count} times",
+  "新建「{tag}」": "Create “{tag}”",
+  "标签最多 {count} 个": "At most {count} tags",
+  "单个标签最长 {count} 个字符": "Each tag is at most {count} characters",
+  "用过 {count} 次": "used {count} times",
+  "前缀": "Prefix",
+  "中缀": "Contains",
+  "后缀": "Suffix",
+
+  // 3D 预览
+  "3D 预览": "3D preview",
+  "待上传": "Pending upload",
+  "自动旋转": "Auto-rotate",
+  "重置视角": "Reset view",
+  "拖拽旋转 · 滚轮缩放": "Drag to rotate · scroll to zoom",
+  "选一张皮肤开始预览": "Pick a skin to preview",
+  "显示 / 隐藏皮肤": "Show / hide skin",
+  "显示 / 隐藏外层": "Show / hide overlay",
+  "显示 / 隐藏披风": "Show / hide cape",
+  "暂停 / 继续": "Pause / resume",
+  "继续": "Resume",
+  "暂停": "Pause",
+  "外层": "overlay",
+  "自动": "Auto",
+  "站立": "Idle",
+  "行走": "Walk",
+  "奔跑": "Run",
+  "飞行": "Fly",
+  "未添加标签": "No tags",
+  "未选择皮肤": "No skin selected",
+
+  // 提示与错误兜底
+  "已穿上「{name}」": "Now wearing “{name}”",
+  "已加入收藏": "Added to favorites",
+  "已取消收藏": "Removed from favorites",
+  "删除这个{noun}？": "Delete this {noun}?",
+  "已删除": "Deleted",
+  "还没选披风，去「披风」挑一张": "No cape selected, pick one in “cape”",
+  "登录状态已失效": "Session expired",
+  "请求失败 ({status})": "Request failed ({status})",
+  "图片加载失败：{url}": "Image load failed: {url}",
+  "皮肤贴图加载失败": "Skin texture load failed",
+  "披风贴图加载失败": "Cape texture load failed",
+};

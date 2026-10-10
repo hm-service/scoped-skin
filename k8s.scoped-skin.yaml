@@ -1,0 +1,71 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: scoped-skin-env
+data:
+    DATA_DIR: "/data"
+    TZ: "Asia/Shanghai"
+    HOST: "0.0.0.0"
+    PORT: "8080"
+    ADMIN_USERNAME: "admin"
+    ADMIN_PASSWORD: ""
+    READYZ_TOKEN: "your_readyz_token"
+    TRUSTED_PROXIES: "127.0.0.1/32,::1/128"
+    GOMEMLIMIT: "128MiB"
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+    name: scoped-skin-data
+spec:
+    accessModes:
+        - ReadWriteOnce
+    resources:
+        requests:
+            storage: 5Gi
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+    name: scoped-skin
+    labels:
+        app: scoped-skin
+spec:
+    restartPolicy: Always
+    containers:
+        - name: scoped-skin
+          image: ghcr.io/hm-service/scoped-skin:latest
+          envFrom:
+              - configMapRef:
+                    name: scoped-skin-env
+          resources:
+              requests:
+                  cpu: 50m
+                  memory: 64Mi
+              limits:
+                  cpu: "1"
+                  memory: 256Mi
+          ports:
+              - containerPort: 8080
+                hostPort: 25580
+                hostIP: 127.0.0.1
+          # podman kube play 只把 livenessProbe 翻成容器健康检查（readinessProbe / startupProbe
+          # 不支持），所以这里没有 readinessProbe。/livez 不需要 token。
+          livenessProbe:
+              httpGet:
+                  path: /livez
+                  port: 8080
+              initialDelaySeconds: 5
+              periodSeconds: 30
+              timeoutSeconds: 3
+              failureThreshold: 3
+          volumeMounts:
+              - name: scoped-skin-data
+                mountPath: /data
+    volumes:
+        - name: scoped-skin-data
+          persistentVolumeClaim:
+              claimName: scoped-skin-data

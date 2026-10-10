@@ -1,0 +1,76 @@
+{
+  "builtin": [
+    {
+      "file": "skins/steve-wide.png",
+      "model": "steve",
+      "tags": [
+        "官方",
+        "Steve"
+      ]
+    },
+    {
+      "file": "skins/alex-slim.png",
+      "model": "alex",
+      "tags": [
+        "官方",
+        "Alex"
+      ]
+    },
+    {
+      "file": "skins/ari-wide.png",
+      "model": "steve",
+      "tags": [
+        "官方",
+        "Ari"
+      ]
+    },
+    {
+      "file": "skins/efe-slim.png",
+      "model": "alex",
+      "tags": [
+        "官方",
+        "Efe"
+      ]
+    },
+    {
+      "file": "skins/kai-wide.png",
+      "model": "steve",
+      "tags": [
+        "官方",
+        "Kai"
+      ]
+    },
+    {
+      "file": "skins/makena-slim.png",
+      "model": "alex",
+      "tags": [
+        "官方",
+        "Makena"
+      ]
+    },
+    {
+      "file": "skins/noor-slim.png",
+      "model": "alex",
+      "tags": [
+        "官方",
+        "Noor"
+      ]
+    },
+    {
+      "file": "skins/sunny-wide.png",
+      "model": "steve",
+      "tags": [
+        "官方",
+        "Sunny"
+      ]
+    },
+    {
+      "file": "skins/zuri-wide.png",
+      "model": "steve",
+      "tags": [
+        "官方",
+        "Zuri"
+      ]
+    }
+  ]
+}
