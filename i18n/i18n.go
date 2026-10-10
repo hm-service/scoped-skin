@@ -48,6 +48,7 @@ var catalog = map[string]entry{
 	"asset.cannot-del": {"只读资源不能删除", "Read-only textures cannot be deleted"},
 	"library.category": {"category 只能是 skin 或 cape", "category must be skin or cape"},
 	"library.tab":      {"tab 只能是 all 或 favorites", "tab must be all or favorites"},
+	"page.missing":     {"页面缺失", "Page is missing"},
 
 	// ── 账号字段校验（core / db 抛的键） ─────────────────────────
 	"field.uuid":           {"UUID", "UUID"},

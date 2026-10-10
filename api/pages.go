@@ -15,10 +15,10 @@ import (
 const YggdrasilLocation = "/api/yggdrasil"
 
 // servePage 把内嵌的 HTML 页面写出去：页面一律 no-store，免得改完前端还看旧的。
-func servePage(w http.ResponseWriter, name string, headers map[string]string) {
+func servePage(w http.ResponseWriter, r *http.Request, name string, headers map[string]string) {
 	body, err := fs.ReadFile(web.Files, name)
 	if err != nil {
-		http.Error(w, "页面缺失", http.StatusInternalServerError)
+		fail(w, r, http.StatusInternalServerError, "page.missing")
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -32,18 +32,18 @@ func servePage(w http.ResponseWriter, name string, headers map[string]string) {
 
 // handleIndex 是主页，顺带带上 ALI 响应头（API 地址指示）。
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	servePage(w, "index.html", map[string]string{
+	servePage(w, r, "index.html", map[string]string{
 		"X-Authlib-Injector-API-Location": YggdrasilLocation,
 	})
 }
 
 func (s *Server) handleAuthPage(w http.ResponseWriter, r *http.Request) {
-	servePage(w, "auth.html", nil)
+	servePage(w, r, "auth.html", nil)
 }
 
 // handleMaintainPage 是管理员维护页；页面本身公开，真正的闸门在 /api/admin/*。
 func (s *Server) handleMaintainPage(w http.ResponseWriter, r *http.Request) {
-	servePage(w, "maintain.html", nil)
+	servePage(w, r, "maintain.html", nil)
 }
 
 // handleStatic 分发内嵌的静态资源（DESIGN.md 3.7）。
@@ -86,7 +86,7 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.App.Ready(); err != nil {
-		slog.ErrorContext(r.Context(), "就绪探针失败", slog.Any("error", err))
+		slog.ErrorContext(r.Context(), "readiness probe failed", slog.Any("error", err))
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}

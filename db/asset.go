@@ -105,7 +105,9 @@ func (s *Store) EnsureBuiltins(fsys fs.FS) error {
 	return nil
 }
 
-// List 按上传时间倒序返回某个粗分类（skin / cape）下的条目；query 按空白切成标签取交集。
+// List 按上传时间倒序返回某个粗分类（skin / cape）下的条目。
+// query 按空白切成多个查询词，每个词都要子串命中条目的某个标签（取交集）；
+// 命中档位（前缀 → 中缀 → 后缀）靠前的排前面，同档仍按上传时间倒序。
 func (s *Store) List(category, tab, query, playerUUID string) ([]Item, error) {
 	kinds := core.KindsOf(category)
 	sqlText := "SELECT " + itemColumns + " FROM asset a" +
@@ -145,11 +147,21 @@ func (s *Store) List(category, tab, query, playerUUID string) ([]Item, error) {
 	if len(tokens) == 0 {
 		return items, nil
 	}
-	kept := items[:0]
+	// items 已经按上传时间倒序，稳定排序保住同档内的先后
+	type match struct {
+		item Item
+		rank int
+	}
+	matched := make([]match, 0, len(items))
 	for _, item := range items {
-		if core.MatchesQuery(item.Tags, tokens) {
-			kept = append(kept, item)
+		if rank, ok := core.QueryRank(item.Tags, tokens); ok {
+			matched = append(matched, match{item: item, rank: rank})
 		}
+	}
+	slices.SortStableFunc(matched, func(left, right match) int { return left.rank - right.rank })
+	kept := make([]Item, len(matched))
+	for index, entry := range matched {
+		kept[index] = entry.item
 	}
 	return kept, nil
 }

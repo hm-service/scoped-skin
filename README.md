@@ -13,6 +13,8 @@
 
 `guest` 是只读身份组：不能上传、收藏或换装（见 [DESIGN.md 5.1](DESIGN.md#51-身份组)）。
 
+贴图库的搜索是标签**模糊**匹配（子串，前缀 → 中缀 → 后缀排序）；搜索框旁的面板列出全部标签，点一下即并进搜索串。PNG 文件也可以直接拖到「上传新皮肤」按钮上，前端按尺寸自动判断是皮肤还是披风。
+
 ![上传皮肤](docs/screenshot-upload.png)
 
 ![用户管理](docs/screenshot-maintain.png)
@@ -103,7 +105,7 @@ web/                       # 前端，由 go:embed 编入（Vue 3 全局构建�
 ├── js/tags.js             # 纯函数：标签配色、排序、前缀→中缀→后缀匹配
 ├── js/toast.js            # 浮动提示：两个 store 共用
 ├── js/api.js  auth.js  vue.js  i18n.js  roles.js
-├── js/components/         # 展示组件（顶栏、卡片、标签输入、上传、3D 面板、用户表、编辑弹层、语言切换）
+├── js/components/         # 展示组件（顶栏、卡片、标签输入、标签面板、上传、3D 面板、用户表、编辑弹层、语言切换）
 ├── js/*-page.js           # 三个页面的根组件
 ├── js/i18n-en-*.js        # 中英对照字典（键为中文原文）
 └── vendor/                # vue.global.prod.js（3.5.13）+ skinview3d

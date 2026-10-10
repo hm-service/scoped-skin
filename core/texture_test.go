@@ -50,18 +50,18 @@ func TestValidateTexture(t *testing.T) {
 		{"皮肤 64×64（steve）", "skin.steve", 64, 64, nil, ""},
 		{"皮肤 64×64（alex）", "skin.alex", 64, 64, nil, ""},
 		{"披风 64×32", "cape", 64, 32, nil, ""},
-		{"皮肤 128×128（HD 不收）", "skin.steve", 128, 128, nil, "皮肤必须是 64×64"},
-		{"皮肤 512×512（HD 不收）", "skin.alex", 512, 512, nil, "皮肤必须是 64×64"},
-		{"皮肤 64×32", "skin.steve", 64, 32, nil, "皮肤必须是 64×64"},
-		{"皮肤 32×32", "skin.alex", 32, 32, nil, "皮肤必须是 64×64"},
-		{"披风 32×64（宽高写反了）", "cape", 32, 64, nil, "披风必须是 64×32"},
-		{"披风 64×64", "cape", 64, 64, nil, "披风必须是 64×32"},
-		{"披风 128×64", "cape", 128, 64, nil, "披风必须是 64×32"},
-		{"不是 PNG", "skin.steve", 0, 0, []byte("GIF89a...................."), "不是有效的 PNG 图片"},
-		{"太短", "skin.steve", 0, 0, []byte{0x89, 'P'}, "不是有效的 PNG 图片"},
-		{"只有 IHDR、没有图像数据", "skin.steve", 0, 0, pngHeader(64, 64), "PNG 数据已损坏，无法解码"},
-		{"声明尺寸为 0", "skin.steve", 0, 0, pngHeader(0, 0), "图片尺寸无效"},
-		{"未知 kind", "hat", 64, 64, nil, "kind 只能是"},
+		{"皮肤 128×128（HD 不收）", "skin.steve", 128, 128, nil, "texture.skin"},
+		{"皮肤 512×512（HD 不收）", "skin.alex", 512, 512, nil, "texture.skin"},
+		{"皮肤 64×32", "skin.steve", 64, 32, nil, "texture.skin"},
+		{"皮肤 32×32", "skin.alex", 32, 32, nil, "texture.skin"},
+		{"披风 32×64（宽高写反了）", "cape", 32, 64, nil, "texture.cape"},
+		{"披风 64×64", "cape", 64, 64, nil, "texture.cape"},
+		{"披风 128×64", "cape", 128, 64, nil, "texture.cape"},
+		{"不是 PNG", "skin.steve", 0, 0, []byte("GIF89a...................."), "texture.png"},
+		{"太短", "skin.steve", 0, 0, []byte{0x89, 'P'}, "texture.png"},
+		{"只有 IHDR、没有图像数据", "skin.steve", 0, 0, pngHeader(64, 64), "texture.decode"},
+		{"声明尺寸为 0", "skin.steve", 0, 0, pngHeader(0, 0), "texture.size"},
+		{"未知 kind", "hat", 64, 64, nil, "valid.kind"},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -92,7 +92,7 @@ func TestValidateTexture(t *testing.T) {
 	// 上限：32 KiB（尺寸检查再严，体积闸门也还在）
 	oversized := append(pngHeader(core.SkinSize, core.SkinSize), make([]byte, core.MaxUploadBytes)...)
 	if _, _, err := core.ValidateTexture("skin.steve", oversized); err == nil ||
-		!strings.Contains(err.Error(), "图片不能超过 32 KB") {
+		!strings.Contains(err.Error(), "upload.too-big") {
 		t.Fatalf("超过 32 KiB 应当被拒: %v", err)
 	}
 }
@@ -158,7 +158,7 @@ func TestNormalizeUserFields(t *testing.T) {
 	}
 	// DESIGN.md 4.1：至少 8 个字符
 	if _, err := core.NormalizePassword(strings.Repeat("x", core.MinPasswordLength-1)); err == nil ||
-		!strings.Contains(err.Error(), "密码至少 8 个字符") {
+		!strings.Contains(err.Error(), "valid.password.short") {
 		t.Fatalf("短密码不该通过: %v", err)
 	}
 	if _, err := core.NormalizePassword(strings.Repeat("x", core.MinPasswordLength)); err != nil {
@@ -195,7 +195,7 @@ func TestNormalizeTags(t *testing.T) {
 		many[index] = "标签" + strconv.Itoa(index)
 	}
 	if _, err := core.NormalizeTags(many); err == nil ||
-		!strings.Contains(err.Error(), "标签最多 16 个") {
+		!strings.Contains(err.Error(), "valid.tag-count") {
 		t.Fatalf("超过 16 个标签应当被拒: %v", err)
 	}
 	if _, err := core.NormalizeTags(many[:core.MaxTagsPerAsset]); err != nil {
@@ -203,7 +203,7 @@ func TestNormalizeTags(t *testing.T) {
 	}
 	long := strings.Repeat("长", core.MaxTagLength+1)
 	if _, err := core.NormalizeTags([]string{long}); err == nil ||
-		!strings.Contains(err.Error(), "单个标签最长 64 个字符") {
+		!strings.Contains(err.Error(), "valid.tag-long") {
 		t.Fatalf("超长标签应当被拒: %v", err)
 	}
 	if _, err := core.NormalizeTags([]string{strings.Repeat("长", core.MaxTagLength)}); err != nil {
@@ -290,18 +290,41 @@ func TestQueryTokensAndMatching(t *testing.T) {
 		t.Fatalf("空查询应当切成空切片: %v", tokens)
 	}
 
-	// 标签交集：每一项查询标签都要能在条目标签里找到（大小写不敏感）
-	if !core.MatchesQuery([]string{"官方", "Steve"}, []string{"steve"}) {
-		t.Fatalf("大小写不敏感的交集没匹配上")
+	// 匹配档位：前缀(0) → 中缀(1) → 后缀(2)，大小写不敏感，认不出回 -1
+	ranks := []struct {
+		tag, token string
+		want       int
+	}{
+		{"Steve", "steve", core.MatchPrefix},
+		{"Steve", "ST", core.MatchPrefix},
+		{"浅蓝披风", "蓝", core.MatchInfix},
+		{"浅蓝披风", "披风", core.MatchSuffix},
+		{"浅蓝披风", "蓝披", core.MatchInfix},
+		{"浅蓝披风", "绿", -1},
+		{"abc", "abcd", -1},
 	}
-	if !core.MatchesQuery([]string{"官方", "Steve"}, []string{"官方", "STeve"}) {
-		t.Fatalf("多标签交集没匹配上")
+	for _, testCase := range ranks {
+		if got := core.MatchRank(testCase.tag, testCase.token); got != testCase.want {
+			t.Errorf("MatchRank(%q, %q) = %d，想要 %d", testCase.tag, testCase.token, got, testCase.want)
+		}
 	}
-	if core.MatchesQuery([]string{"官方"}, []string{"官方", "蓝色"}) {
-		t.Fatalf("缺一项标签不该匹配")
+
+	// 标签交集：每一项查询词都要能在条目标签里找到；档位取各项里最差的那一档
+	rank, ok := core.QueryRank([]string{"官方", "Steve"}, []string{"steve"})
+	if !ok || rank != core.MatchPrefix {
+		t.Fatalf("大小写不敏感的前缀命中没匹配上: %d, %v", rank, ok)
 	}
-	if !core.MatchesQuery([]string{"官方"}, nil) {
-		t.Fatalf("空查询应当匹配一切")
+	if rank, ok := core.QueryRank([]string{"官方", "Steve"}, []string{"官方", "STeve"}); !ok || rank != core.MatchPrefix {
+		t.Fatalf("多标签交集没匹配上: %d, %v", rank, ok)
+	}
+	if rank, ok := core.QueryRank([]string{"官方皮肤"}, []string{"官方", "皮肤"}); !ok || rank != core.MatchSuffix {
+		t.Fatalf("最差档位应当是后缀: %d, %v", rank, ok)
+	}
+	if _, ok := core.QueryRank([]string{"官方"}, []string{"官方", "蓝色"}); ok {
+		t.Fatalf("缺一项查询词不该匹配")
+	}
+	if rank, ok := core.QueryRank([]string{"官方"}, nil); !ok || rank != core.MatchPrefix {
+		t.Fatalf("空查询应当匹配一切: %d, %v", rank, ok)
 	}
 }
 
@@ -310,13 +333,16 @@ func TestValidationErrorTypes(t *testing.T) {
 
 	var validation *core.ValidationError
 	var conflict *core.ConflictError
-	// 错误只带文案键 + 参数；Error() 渲染成源语言（简体中文），方便看日志
+	// 错误只带文案键 + 参数；Error() 是给日志看的，所以给的是键而不是译文
 	err := error(&core.ValidationError{Key: "valid.uuid"})
 	if !asValidation(err, &validation) || validation.Key != "valid.uuid" {
 		t.Fatalf("ValidationError 断言失败")
 	}
-	if got := validation.Error(); got != "UUID 必须是 32 位十六进制字符" {
-		t.Fatalf("Error() = %q，应当渲染成源语言文案", got)
+	if got := validation.Error(); got != "valid.uuid" {
+		t.Fatalf("Error() = %q，想要文案键", got)
+	}
+	if got := (error(&core.ValidationError{Key: "valid.tag-long", Args: []any{64}})).Error(); got != "valid.tag-long(64)" {
+		t.Fatalf("带参数的 Error() = %q", got)
 	}
 	conflictErr := error(&core.ConflictError{Key: "valid.conflict", Args: []any{i18n.Key("field.username"), "steve"}})
 	if asValidation(conflictErr, &validation) {
@@ -325,8 +351,15 @@ func TestValidationErrorTypes(t *testing.T) {
 	if !asConflict(conflictErr, &conflict) || conflict.Key != "valid.conflict" {
 		t.Fatalf("ConflictError 断言失败")
 	}
-	if got := conflict.Error(); got != "账号名「steve」已被占用" {
-		t.Fatalf("Error() = %q，参数里的文案键应当被翻译", got)
+	if got := conflict.Error(); got != "valid.conflict(field.username, steve)" {
+		t.Fatalf("Error() = %q，参数里的文案键也应当原样给出", got)
+	}
+	// 用户可见的文案仍然按语言渲染（HTTP 层走这条）
+	if got := i18n.T(i18n.ZhHans, conflict.Key, conflict.Args...); got != "账号名「steve」已被占用" {
+		t.Fatalf("渲染文案 = %q", got)
+	}
+	if got := i18n.T(i18n.En, conflict.Key, conflict.Args...); got != "Account name “steve” is taken" {
+		t.Fatalf("英文文案 = %q", got)
 	}
 }
 

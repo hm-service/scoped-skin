@@ -6,7 +6,7 @@
  */
 import { api } from "./api.js";
 import { getToken, getUser, setToken, toLogin } from "./auth.js";
-import { detectModel, loadImage } from "./avatar.js";
+import { categoryOfSize, detectModel, loadImage, pngSize } from "./avatar.js";
 import { t } from "./i18n.js";
 import * as roles from "./roles.js";
 import { hasTag, shortId } from "./tags.js";
@@ -91,6 +91,7 @@ function createStore() {
     selectedTags: [], // 上传表单选中的标签
     model: "steve", // 上传表单的模型：steve | alex（披风没有模型）
     fileOver: false, // 拖拽悬停
+    uploadOver: false, // 拖到「上传新皮肤」按钮上
     pending: { file: null, name: "", size: 0, url: null, id: null, registered: null, checking: false, submitting: false, error: "" },
     view: { animation: "idle", paused: false, rotate: true, skinVisible: true, outerVisible: true },
     toast: { message: "", kind: "info", visible: false },
@@ -100,6 +101,7 @@ function createStore() {
   let refreshToken = 0; // refresh() 的序号：并发请求只认最后发出的那次响应
   let checkToken = 0; // 预检序号：换了文件 / 类别，晚回来的旧预检不许回写
   let imageToken = 0; // 待上传贴图的解码序号：换了文件，旧的解码结果作废
+  let fileToken = 0; // 读 PNG 头的序号：换了文件，晚回来的尺寸结果不许回写
 
   /* ── 提示 ────────────────────────────────────────────────────── */
 
@@ -186,7 +188,20 @@ function createStore() {
   });
 
   const emptyNoun = computed(() => (state.category === "skin" ? t("皮肤") : t("披风")));
-  const emptyTokens = computed(() => state.query.trim().split(/\s+/).filter(Boolean));
+
+  /** 搜索串切出来的词（与后端 core.SplitQuery 一致：按空白切、大小写不敏感去重）。 */
+  const queryTokens = computed(() => {
+    const seen = new Set();
+    const tokens = [];
+    for (const token of state.query.split(/\s+/)) {
+      const key = token.toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      tokens.push(token);
+    }
+    return tokens;
+  });
+  const emptyTokens = computed(() => queryTokens.value);
 
   /** 上传表单的按钮文案与可用性（已存在时只有改动过才能提交）。 */
   const submitState = computed(() => {
@@ -369,6 +384,21 @@ function createStore() {
     submitSearch();
   }
 
+  /** 这个标签是不是已经在搜索串里（标签面板据此高亮）。 */
+  function queryHasTag(tag) {
+    const needle = tag.toLowerCase();
+    return queryTokens.value.some((token) => token.toLowerCase() === needle);
+  }
+
+  /** 标签面板点一下＝把标签加进搜索串（再点一下移出去），然后立刻搜。 */
+  function toggleQueryTag(tag) {
+    const needle = tag.toLowerCase();
+    const kept = queryTokens.value.filter((token) => token.toLowerCase() !== needle);
+    if (kept.length === queryTokens.value.length) kept.push(tag);
+    state.query = kept.join(" ");
+    submitSearch();
+  }
+
   /* ── 上传 ────────────────────────────────────────────────────── */
 
   // 预检把原图（base64）交给后端：尺寸、能不能解码、asset_id 都由它自己算
@@ -434,9 +464,10 @@ function createStore() {
   }
 
   function clearPendingFile() {
-    // 在途的预检与解码一律作废，免得它们回写到刚清空的表单上
+    // 在途的预检、解码与读 PNG 头一律作废，免得它们回写到刚清空的表单上
     checkToken += 1;
     imageToken += 1;
+    fileToken += 1;
     const pending = state.pending;
     if (pending.url) URL.revokeObjectURL(pending.url);
     pendingImage.value = null;
@@ -448,9 +479,13 @@ function createStore() {
     state.model = "steve";
   }
 
-  function setPendingFile(file) {
+  async function setPendingFile(file) {
     if (!file) return;
-    if (file.type !== "image/png") {
+    const readToken = ++fileToken;
+    // 认 PNG 头而不是 file.type：拖进来的文件不一定带对的 MIME
+    const size = await pngSize(file);
+    if (readToken !== fileToken) return; // 期间又换了文件
+    if (!size) {
       toastError(t("只支持 PNG 文件"));
       return;
     }
@@ -476,6 +511,27 @@ function createStore() {
         if (token !== imageToken) return;
         toastError(t("贴图读取失败"));
       });
+  }
+
+  /**
+   * 文件直接拖到「上传新皮肤」按钮上：先按 PNG 尺寸挑皮肤 / 披风再进面板。
+   * 与面板里那个拖拽区的唯一区别就是这一步 —— 那边类别由用户在左栏自己选。
+   */
+  async function dropOnUploadTab(file) {
+    state.uploadOver = false;
+    if (!file || !canUpload.value) return;
+    const size = await pngSize(file);
+    if (!size) {
+      toastError(t("只支持 PNG 文件"));
+      return;
+    }
+    const category = categoryOfSize(size);
+    if (state.category !== category) {
+      state.category = category;
+      toast(t("按尺寸识别为{noun}，已切换", { noun: category === "skin" ? t("皮肤") : t("披风") }));
+    }
+    if (!uploading.value) await setTab("upload");
+    setPendingFile(file);
   }
 
   async function submitUpload() {
@@ -570,8 +626,11 @@ function createStore() {
     setQuery,
     submitSearch,
     clearQuery,
+    queryHasTag,
+    toggleQueryTag,
     setPendingFile,
     clearPendingFile,
+    dropOnUploadTab,
     addTag,
     removeTag,
     toggleTag,

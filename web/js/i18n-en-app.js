@@ -33,6 +33,9 @@ export const app = {
   "全部披风": "All capes",
   "收藏的披风": "Favorite capes",
   "搜索标签 · 空格分隔取交集": "Search tags · space-separated AND",
+  "全部标签": "All tags",
+  "点击标签加入搜索": "Click a tag to add it to the search",
+  "还没有任何标签": "No tags yet",
   "清除": "Clear",
   "载入中…": "Loading…",
   "皮肤 {skins} · 披风 {capes} · 收藏 {favorites}": "Skins {skins} · Capes {capes} · Favorites {favorites}",
@@ -82,6 +85,7 @@ export const app = {
   "已更新标签 / 模型": "Tags / model updated",
   "上传成功": "Uploaded",
   "当前身份组不能上传贴图": "This role cannot upload textures",
+  "按尺寸识别为{noun}，已切换": "Detected a {noun} by size, switched",
   "只有管理员能删除资源": "Only admins can delete",
 
   // 标签输入

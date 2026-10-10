@@ -66,6 +66,18 @@ func pngBytes(t *testing.T, width, height int) []byte {
 	return buffer.Bytes()
 }
 
+// 内容寻址的库要靠不同像素才能建出多条不同的贴图。
+func pngWithPixel(t *testing.T, seed byte) []byte {
+	t.Helper()
+	canvas := image.NewRGBA(image.Rect(0, 0, core.SkinSize, core.SkinSize))
+	canvas.Set(int(seed)%core.SkinSize, 0, color.RGBA{R: seed, G: 0x40, B: 0xff, A: 0xff})
+	var buffer bytes.Buffer
+	if err := png.Encode(&buffer, canvas); err != nil {
+		t.Fatalf("编码 PNG 失败: %v", err)
+	}
+	return buffer.Bytes()
+}
+
 func TestEnsureBuiltinsIsIdempotent(t *testing.T) {
 	t.Parallel()
 	store := openStore(t)
@@ -491,6 +503,50 @@ func TestListFavoriteSearchEquipDelete(t *testing.T) {
 	}
 	if status, _ := store.Delete(item.ID); status != "missing" {
 		t.Fatalf("重复删除 = %q", status)
+	}
+}
+
+// 搜索是子串（模糊）匹配，排序按命中档位：前缀 → 中缀 → 后缀，同档才轮到上传时间。
+func TestListSearchRanksByMatchPosition(t *testing.T) {
+	t.Parallel()
+	store := openStore(t)
+
+	upload := func(tag string, seed byte) db.Item {
+		t.Helper()
+		item, _, err := store.AddUpload("skin.steve", []string{tag}, pngWithPixel(t, seed))
+		if err != nil {
+			t.Fatalf("上传 %q 失败: %v", tag, err)
+		}
+		return item
+	}
+	// 上传顺序故意与「靠前」相反：最新传的反而是后缀命中
+	prefix := upload("蓝色外套", 1)
+	infix := upload("浅蓝披风", 2)
+	suffix := upload("深蓝", 3)
+
+	found, err := store.List("skin", "all", "蓝", "")
+	if err != nil {
+		t.Fatalf("搜索失败: %v", err)
+	}
+	// 精确交集的话「蓝」一条都搜不到，子串匹配才能命中这三条
+	if len(found) != 3 {
+		t.Fatalf("「蓝」应当命中 3 条: %v", found)
+	}
+	for index, want := range []db.Item{prefix, infix, suffix} {
+		if found[index].ID != want.ID {
+			t.Fatalf("第 %d 条 = %v，想要 %v", index+1, found[index].Tags, want.Tags)
+		}
+	}
+
+	// 每一项查询词都要命中：这个条目是「前缀 + 后缀」，取最差档
+	if hit, _ := store.List("skin", "all", "蓝 外套", ""); len(hit) != 1 || hit[0].ID != prefix.ID {
+		t.Fatalf("多查询词的交集不对: %v", hit)
+	}
+
+	// 大小写不敏感
+	mixed := upload("BlueCape", 4)
+	if hit, _ := store.List("skin", "all", "blue", ""); len(hit) != 1 || hit[0].ID != mixed.ID {
+		t.Fatalf("大小写不敏感的子串匹配不对: %v", hit)
 	}
 }
 

@@ -5,6 +5,7 @@ import { requireAuth } from "./auth.js";
 import { TopBar } from "./components/chrome.js";
 import { SkinCard } from "./components/skin-card.js";
 import { StagePane } from "./components/stage-pane.js";
+import { TagPanel } from "./components/tag-panel.js";
 import { ToastBox } from "./components/toast-box.js";
 import { UploadPanel } from "./components/upload-panel.js";
 import { installI18n, t } from "./i18n.js";
@@ -13,14 +14,23 @@ import { createApp, onMounted } from "./vue.js";
 
 const App = {
   name: "App",
-  components: { TopBar, ToastBox, SkinCard, StagePane, UploadPanel },
+  components: { TopBar, ToastBox, SkinCard, StagePane, UploadPanel, TagPanel },
   setup() {
     const isActive = (item) =>
       item.category === "skin"
         ? store.state.skin?.id === item.id
         : store.state.cape?.id === item.id;
 
+    // 拖到按钮的子元素（图标、文字）上也会触发 dragleave，认 relatedTarget 才不闪
+    function leaveUploadTab(event) {
+      if (event.currentTarget.contains(event.relatedTarget)) return;
+      store.state.uploadOver = false;
+    }
+
     onMounted(async () => {
+      // 页面别处的漏网拖拽：吞掉事件，免得浏览器直接打开/接管这张图
+      document.addEventListener("dragover", (event) => event.preventDefault());
+      document.addEventListener("drop", (event) => event.preventDefault());
       try {
         await store.loadTags();
         await store.loadMe();
@@ -30,7 +40,7 @@ const App = {
       }
     });
 
-    return { store, isActive };
+    return { store, isActive, leaveUploadTab };
   },
   template: `
     <div class="app">
@@ -52,7 +62,12 @@ const App = {
               </button>
             </div>
             <button v-if="store.canUpload" class="tab tab-upload" role="tab"
-                    :class="{ on: store.uploading }" @click="store.setTab('upload')">
+                    :class="{ on: store.uploading, over: store.state.uploadOver }"
+                    @click="store.setTab('upload')"
+                    @dragenter.prevent="store.state.uploadOver = true"
+                    @dragover.prevent="store.state.uploadOver = true"
+                    @dragleave="leaveUploadTab"
+                    @drop.prevent="store.dropOnUploadTab($event.dataTransfer?.files?.[0])">
               <svg class="icon"><use href="#i-upload"/></svg>{{ t("上传新皮肤") }}
             </button>
           </div>
@@ -85,6 +100,7 @@ const App = {
                     <svg class="icon"><use href="#i-x"/></svg>
                   </button>
                 </label>
+                <TagPanel/>
               </div>
 
               <div class="grid" id="grid" role="list"

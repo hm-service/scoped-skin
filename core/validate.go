@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"image"
 	"image/png"
 	"regexp"
@@ -89,7 +90,7 @@ type ValidationError struct {
 	Args []any
 }
 
-func (e *ValidationError) Error() string { return i18n.T(i18n.Default, e.Key, e.Args...) }
+func (e *ValidationError) Error() string { return keyText(e.Key, e.Args) }
 
 // ConflictError 账号字段撞上唯一约束（uuid / player_name / username 已被占用）。
 type ConflictError struct {
@@ -97,7 +98,24 @@ type ConflictError struct {
 	Args []any
 }
 
-func (e *ConflictError) Error() string { return i18n.T(i18n.Default, e.Key, e.Args...) }
+func (e *ConflictError) Error() string { return keyText(e.Key, e.Args) }
+
+// keyText 是这两个错误的 Error()：它只进 slog（DESIGN.md 1.3 要求日志一律英文），
+// 所以给的是文案键与参数而不是渲染后的文案 —— 译文由 HTTP 层按 Accept-Language 出。
+func keyText(key string, args []any) string {
+	if len(args) == 0 {
+		return key
+	}
+	parts := make([]string, len(args))
+	for index, arg := range args {
+		if nested, ok := arg.(i18n.Key); ok {
+			parts[index] = string(nested)
+			continue
+		}
+		parts[index] = fmt.Sprint(arg)
+	}
+	return key + "(" + strings.Join(parts, ", ") + ")"
+}
 
 func invalid(key string, args ...any) *ValidationError {
 	return &ValidationError{Key: key, Args: args}
@@ -219,18 +237,54 @@ func SplitQuery(query string) []string {
 	return tokens
 }
 
-// MatchesQuery 标签交集：每一项查询标签都要能在条目标签里找到。
-func MatchesQuery(tags, tokens []string) bool {
-	owned := make(map[string]bool, len(tags))
-	for _, tag := range tags {
-		owned[strings.ToLower(tag)] = true
+// 匹配档位（越小越靠前），与前端 tags.js 的 matchTags 同一套定义。
+const (
+	MatchPrefix = iota
+	MatchInfix
+	MatchSuffix
+)
+
+// MatchRank 一个查询词与一个标签的匹配档位：前缀 / 中缀 / 后缀，不匹配返回 -1。
+// 大小写不敏感；比较与「后缀」判定都在小写化后的串上做，免得 Unicode 折叠改变字节长度。
+func MatchRank(tag, token string) int {
+	haystack := strings.ToLower(tag)
+	needle := strings.ToLower(token)
+	at := strings.Index(haystack, needle)
+	if at < 0 {
+		return -1
 	}
+	if at == 0 {
+		return MatchPrefix
+	}
+	if at+len(needle) == len(haystack) {
+		return MatchSuffix
+	}
+	return MatchInfix
+}
+
+// QueryRank 标签交集：每一项查询词都要能命中条目的某个标签（子串匹配），
+// 返回「各项里最差的那一档」；一项都没命中就返回 ok=false。
+// 取最差档是为了让「每个词都靠前」的条目排在前面，而不是靠某一个词拉分。
+func QueryRank(tags, tokens []string) (int, bool) {
+	if len(tokens) == 0 {
+		return MatchPrefix, true
+	}
+	worst := MatchPrefix
 	for _, token := range tokens {
-		if !owned[strings.ToLower(token)] {
-			return false
+		best := -1
+		for _, tag := range tags {
+			if rank := MatchRank(tag, token); rank >= 0 && (best < 0 || rank < best) {
+				best = rank
+			}
+		}
+		if best < 0 {
+			return 0, false
+		}
+		if best > worst {
+			worst = best
 		}
 	}
-	return true
+	return worst, true
 }
 
 // HeaderSize 从 BLOB 前 24 字节里读 PNG 尺寸（列表查询用，避免把整张图读进内存）。

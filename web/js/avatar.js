@@ -23,6 +23,35 @@ const UV = {
 /** 单位尺寸（皮肤坐标格）→ canvas 像素 */
 const SCALE = 8;
 
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/**
+ * 读 PNG 头 24 字节拿到尺寸（与后端 core.HeaderSize 同一套读法）。
+ * 不是 PNG 就回 null —— 拖拽进来的文件不一定带对的 MIME，认字节比认 type 可靠。
+ *
+ * @returns {Promise<{width: number, height: number}|null>}
+ */
+export async function pngSize(file) {
+  let header;
+  try {
+    header = new Uint8Array(await file.slice(0, 24).arrayBuffer());
+  } catch {
+    return null; // 读不出来（目录、权限、文件已被移走）就当它不是 PNG
+  }
+  if (header.length < 24 || PNG_MAGIC.some((byte, index) => header[index] !== byte)) return null;
+  if (String.fromCharCode(...header.subarray(12, 16)) !== "IHDR") return null;
+  const view = new DataView(header.buffer);
+  return { width: view.getUint32(16), height: view.getUint32(20) };
+}
+
+/**
+ * 尺寸 → 粗分类：宽是高的两倍就是 64×32 那张披风比例（HD 倍数也认），其余按皮肤走。
+ * 不合规的尺寸不在这里拦，交给后端预检报错 —— 尺寸规则只写一份。
+ */
+export function categoryOfSize({ width, height }) {
+  return width === height * 2 ? "cape" : "skin";
+}
+
 /** 正面视图的绘制顺序：腿 → 身体 → 手臂 → 头，外层（overlay）紧随其后。 */
 function bodyParts(kind) {
   const slim = kind === "skin.alex";
