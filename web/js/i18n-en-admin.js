@@ -44,7 +44,7 @@ export const admin = {
   "账号名只能是小写字母、数字、@、. 和 _": "Account name takes lowercase letters, digits, @, . and _",
   "8-64 位，大小写字母 / 数字 / 下划线": "8–64 chars: letters / digits / underscore",
   "留空不改；8-64 位大小写字母 / 数字 / 下划线": "Empty keeps it · 8–64 letters / digits / underscore",
-  "32 位小写十六进制，留空则自动推导": "32 lowercase hex characters; empty derives it",
+  "32 位小写十六进制，横线会被去掉；留空则自动推导": "32 lowercase hex, dashes stripped; empty derives it",
   "密码长度 {min}-{max} 位": "Password must be {min}–{max} characters",
   "密码只能是大写字母、小写字母、数字或下划线": "Password takes letters, digits and underscore",
   "身份组": "Role",
@@ -69,7 +69,7 @@ export const admin = {
   // ── 维护页：编辑账号 ────────────────────────────────────────────
   "编辑用户": "Edit account",
   "关闭": "Close",
-  "32 位小写十六进制，可带横线": "32 lowercase hex characters, dashes allowed",
+  "32 位小写十六进制，横线会被去掉": "32 lowercase hex characters, dashes stripped",
   "新密码": "New password",
   "保存": "Save",
   "保存中…": "Saving…",

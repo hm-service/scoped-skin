@@ -112,11 +112,13 @@ func TestHeaderSize(t *testing.T) {
 func TestNormalizeUserFields(t *testing.T) {
 	t.Parallel()
 
-	if got, err := core.NormalizeUUID("B50AD385-829D-3141-A216-7E7D7539BA7F"); err != nil ||
+	// 写入路径只收小写（大写要在前端折下来，后端严格）
+	if got, err := core.NormalizeUUID("b50ad385-829d-3141-a216-7e7d7539ba7f"); err != nil ||
 		got != "b50ad385829d3141a2167e7d7539ba7f" {
 		t.Fatalf("NormalizeUUID = %q, %v", got, err)
 	}
-	for _, bad := range []string{"", "xyz", "b50ad385829d3141a2167e7d7539ba7", "b50ad385829d3141a2167e7d7539ba7f0"} {
+	for _, bad := range []string{"", "xyz", "B50AD385-829D-3141-A216-7E7D7539BA7F",
+		"b50ad385829d3141a2167e7d7539ba7", "b50ad385829d3141a2167e7d7539ba7f0"} {
 		if _, err := core.NormalizeUUID(bad); err == nil {
 			t.Fatalf("UUID %q 不该通过", bad)
 		}

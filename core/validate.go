@@ -139,9 +139,13 @@ func invalid(key string, args ...any) *ValidationError {
 	return &ValidationError{Key: key, Args: args}
 }
 
-// NormalizeUUID 统一成 32 位无横线小写；带横线的输入也接受。
+// NormalizeUUID UUID：只接受 32 位**小写**十六进制，带横线的写法也认（先去掉横线再判）。
+//
+// 写入路径用它：大写会被拒 —— 库里只存小写，免得同一个 UUID 有两种写法。前端在输入框
+// 失焦时把大写折成小写，不会让用户自己撞上这条。查 UUID 的地方（如 Store.User、
+// Yggdrasil 的 profile）走 DashlessUUID（去横线 + 转小写），那里要宽容。
 func NormalizeUUID(value string) (string, error) {
-	cleaned := DashlessUUID(strings.TrimSpace(value))
+	cleaned := strings.ReplaceAll(strings.TrimSpace(value), "-", "")
 	if !uuidPattern.MatchString(cleaned) {
 		return "", invalid("valid.uuid")
 	}

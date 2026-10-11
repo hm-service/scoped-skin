@@ -429,10 +429,15 @@ func TestCreateUserWithUUID(t *testing.T) {
 	store := openStore(t)
 
 	explicit := "0123456789abcdef0123456789abcdef"
+	// 带横线的小写照收（横线会被去掉）；大写不收
 	user, err := store.CreateUserWithUUID("anchored@example.com", "hunter2x", "Anchored", "normal",
-		"01234567-89AB-CDEF-0123-456789ABCDEF")
+		"01234567-89ab-cdef-0123-456789abcdef")
 	if err != nil || user.UUID != explicit {
 		t.Fatalf("指定 uuid 没生效: %+v (%v)", user, err)
+	}
+	if _, err := store.CreateUserWithUUID("upper@example.com", "hunter2x", "UpperUuid", "normal",
+		"01234567-89AB-CDEF-0123-456789ABCDEF"); err == nil {
+		t.Fatalf("大写的 uuid 不该通过")
 	}
 	if user.PlayerName != "Anchored" {
 		t.Errorf("角色名 = %q，想要 Anchored", user.PlayerName)

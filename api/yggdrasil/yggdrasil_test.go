@@ -691,10 +691,12 @@ func TestProfile(t *testing.T) {
 	}
 	verifySignature(t, h.app.Keys.PublicPEM(), profile.Properties[0].Value, profile.Properties[0].Signature)
 
-	// 带横线的 UUID 也认
+	// 查询路径要宽容：带横线、大写的 UUID 都认（写入路径才严格只收小写）
 	dashed := playerUUID[0:8] + "-" + playerUUID[8:12] + "-" + playerUUID[12:16] + "-" + playerUUID[16:20] + "-" + playerUUID[20:32]
-	if recorder := h.do(http.MethodGet, "/api/yggdrasil/sessionserver/session/minecraft/profile/"+dashed, nil, ""); recorder.Code != http.StatusOK {
-		t.Fatalf("带横线的 UUID 应当也认，实际 %d", recorder.Code)
+	for _, form := range []string{dashed, strings.ToUpper(dashed)} {
+		if recorder := h.do(http.MethodGet, "/api/yggdrasil/sessionserver/session/minecraft/profile/"+form, nil, ""); recorder.Code != http.StatusOK {
+			t.Errorf("profile 查 %q 应当也认，实际 %d", form, recorder.Code)
+		}
 	}
 	// 查无此人 → 204
 	if recorder := h.do(http.MethodGet, "/api/yggdrasil/sessionserver/session/minecraft/profile/00000000000000000000000000000000", nil, ""); recorder.Code != http.StatusNoContent {

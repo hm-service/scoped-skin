@@ -23,6 +23,7 @@ const PASSWORD_PATTERN = /^[A-Za-z0-9_]+$/;
 const MAX_USERNAME_LENGTH = 32;
 const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 64;
+// UUID：本地故意宽松（带 `i`），大写不在这里拦 —— 失焦时折成小写、发请求前再折一次。
 const UUID_PATTERN = /^(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
 
 /** 校验一组账号字段；返回错误文案，通过则返回空串。密码留空表示不改（编辑时）。 */
@@ -108,6 +109,22 @@ function createStore() {
     state.draftOpen = false;
   }
 
+  /**
+   * UUID 的规范形式：32 位无横线小写（与库里存的一致）。
+   *
+   * 输入框失焦时折成它 —— 大小写与横线都折，不折的话「看到的」和「存下来的」不一样，
+   * 容易让人以为横线也进了库。不边打边改，免得光标乱跳。
+   */
+  const canonicalUuid = (value) => value.trim().toLowerCase().replaceAll("-", "");
+
+  function lowerDraftUuid() {
+    state.draft.uuid = canonicalUuid(state.draft.uuid);
+  }
+
+  function lowerEditingUuid() {
+    if (state.editing) state.editing.uuid = canonicalUuid(state.editing.uuid);
+  }
+
   async function create() {
     const draft = state.draft;
     if (!draft.username.trim() || !draft.player_name.trim() || !draft.password) {
@@ -134,7 +151,7 @@ function createStore() {
           player_name: draft.player_name.trim(),
           password: draft.password,
           role: draft.role,
-          uuid: draft.uuid.trim(), // 空串 = 让后端按离线规则推导
+          uuid: canonicalUuid(draft.uuid), // 空串 = 让后端按离线规则推导
         }),
       });
       applySnapshot(payload);
@@ -193,7 +210,7 @@ function createStore() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          uuid: editing.uuid,
+          uuid: canonicalUuid(editing.uuid),
           username: editing.username.trim(),
           player_name: editing.player_name.trim(),
           role: editing.role,
@@ -241,6 +258,8 @@ function createStore() {
     load,
     startCreate,
     cancelCreate,
+    lowerDraftUuid,
+    lowerEditingUuid,
     create,
     startEdit,
     cancelEdit,

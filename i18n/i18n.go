@@ -55,7 +55,7 @@ var catalog = map[string]entry{
 	"field.uuid":             {"UUID", "UUID"},
 	"field.username":         {"账号名", "Account name"},
 	"field.player_name":      {"游戏内名称", "Player name"},
-	"valid.uuid":             {"UUID 必须是 32 位十六进制字符", "UUID must be 32 hex characters"},
+	"valid.uuid":             {"UUID 必须是 32 位小写十六进制字符", "UUID must be 32 lowercase hex characters"},
 	"valid.username.empty":   {"账号名不能为空", "Account name is required"},
 	"valid.username.long":    {"账号名最长 %d 个字符", "Account name is at most %d characters"},
 	"valid.username.invalid": {"账号名只能是小写字母、数字、@、. 和 _", "Account name takes lowercase letters, digits, @, . and _"},

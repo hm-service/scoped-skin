@@ -30,7 +30,8 @@ export const UserEditor = {
           <label class="field">
             <span>UUID</span>
             <input v-model.trim="store.state.editing.uuid" type="text" spellcheck="false"
-                   autocomplete="off" :placeholder="t('32 位小写十六进制，可带横线')">
+                   autocomplete="off" :placeholder="t('32 位小写十六进制，横线会被去掉')"
+                   @blur="store.lowerEditingUuid()">
           </label>
           <label class="field">
             <span>{{ t("身份组") }}</span>

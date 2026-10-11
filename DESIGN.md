@@ -175,7 +175,7 @@ flowchart LR
 - **贴图**：`textures` 属性 = `base64(JSON)`，`SKIN.url` 指向 [3.4 /asset/{asset_id}](#34-assetasset_id)（内容寻址、公开只读，客户端直接拉）；`kind` 映射到 `metadata.model`：`skin.steve` → `default`（正常手臂宽度）、`skin.alex` → `slim`（细手臂），`cape` 本就不是皮肤、不带 metadata；`unsigned=false` 时用 **RSA-SHA1** 对 base64 串签名，公钥即根元数据里的 `signaturePublickey`，私钥落在 `DATA_DIR/private.pem`（首次启动生成 4096 位）。
 - **与站点登录的关系**：两套 token 互不相通 —— 站点 token 是 HMAC（密钥每次启动随机，重启即全部失效）；Yggdrasil 的 `accessToken` 是随机数、也只活在内存里。管理员在 `/maintain` 动过某个账号（删号 / 改 UUID / 改凭据）时，会按 uuid 把这个账号的 Yggdrasil 会话一并清掉。
 - **防爆破**：应用侧不做限流；`authenticate` / `signout` 依靠恒定请求时间 —— 无论账号存不存在，每次请求都至少消耗 1 秒才返回（[5.3 防爆破与加固措施](#53-防爆破与加固措施)），单个客户端的串行请求频率因此不超过 60 次/分钟。更严格的频率上限由反向代理承担（[1.4](#14-反向代理)）。
-- **profile 与签名细节**：`authenticate` 带 `requestUser=true` 时响应另含 `user`；profile 的 `id` 为无横线 UUID，接口亦接受带横线写法，角色不存在回 `204` 而非 `403`；`unsigned` 默认 `true`（不带签名），仅显式 `unsigned=false` 时签名。textures 属性为 `base64(JSON)`，含 `timestamp`（Java 毫秒）、`profileId`、`profileName`；签名算法为 RSA-SHA1 + PKCS1v15，密钥对落在 `DATA_DIR/private.pem`（PKCS#8）与 `public.pem`（PKIX），首次启动以标准库 `crypto/rsa` 生成 4096 位后复用
+- **profile 与签名细节**：`authenticate` 带 `requestUser=true` 时响应另含 `user`；profile 的 `id` 为无横线 UUID，接口亦接受带横线与大写的写法（查询宽容、写入严格），角色不存在回 `204` 而非 `403`；`unsigned` 默认 `true`（不带签名），仅显式 `unsigned=false` 时签名。textures 属性为 `base64(JSON)`，含 `timestamp`（Java 毫秒）、`profileId`、`profileName`；签名算法为 RSA-SHA1 + PKCS1v15，密钥对落在 `DATA_DIR/private.pem`（PKCS#8）与 `public.pem`（PKIX），首次启动以标准库 `crypto/rsa` 生成 4096 位后复用
 - **材质 URL 与 skinDomains**：材质 URL 以请求的 `Host` 拼接绝对地址，`X-Forwarded-Proto: https` 时用 https；`skinDomains` 白名单为请求所用域名加 `127.0.0.1` 与 `localhost`
 - **`hasJoined` 的 IP 核对**：`ip` 不一致时返回 `204` **且不消费暗号**（避免一个抄错 IP 的查询把玩家挡在门外）。经反代或 NAT 时两端观察到的 IP 可能不同，此情形下不应开启 MC 服务端的 `prevent-proxy-connections`
 - **发现机制**：`GET /` 带响应头 `X-Authlib-Injector-API-Location: /api/yggdrasil`，把站点地址交给启动器即可自动定位服务
@@ -225,7 +225,7 @@ flowchart LR
 | 字段            | 类型    | 约束       | 说明                                                                                                             |
 | --------------- | ------- | ---------- | ---------------------------------------------------------------------------------------------------------------- |
 | `id`            | INTEGER | 自增主键   | 业务无关主键                                                                                                     |
-| `uuid`          | TEXT    | 唯一，非空 | 用户 UUID，定长 32 位小写字母 + 数字组合；创建时可指定（留空按离线规则从游戏内名称推导），建好后也能改           |
+| `uuid`          | TEXT    | 唯一，非空 | 用户 UUID，定长 32 位小写字母 + 数字组合。写入只收小写（带横线的写法也收，横线先去掉再判；大写会被拒 —— 前端在输入框失焦时折成规范形式：去横线 + 转小写，让界面显示的就是库里存的那串）；查 UUID 的地方（`Store.User`、Yggdrasil profile）走 `DashlessUUID`，大小写与横线都宽容。创建时可指定（留空按离线规则从游戏内名称推导），建好后也能改           |
 | `role`          | TEXT    | 非空       | 用于身份组，枚举量：admin / normal / guest                                                                       |
 | `player_name`   | TEXT    | 唯一，非空 | 游戏内角色名，长度 3-16，仅允许大小写字母 + 数字 + 下划线；唯一性**大小写不敏感**（`Steve` 与 `steve` 算同一个） |
 | `username`      | TEXT    | 唯一，非空 | 账号登录名，最长 32，只允许小写字母 + 数字 + `@` + `.` + `_`（当邮箱使够用；规则是字符集，不是邮箱语法）         |

@@ -127,7 +127,7 @@ func TestAdminRouteTargetValidation(t *testing.T) {
 		if recorder.Code != http.StatusBadRequest {
 			t.Errorf("%s 非法 uuid 状态码 = %d，想要 400（%s）", method, recorder.Code, recorder.Body.String())
 		}
-		if got := detail(t, recorder); got != "UUID 必须是 32 位十六进制字符" {
+		if got := detail(t, recorder); got != "UUID 必须是 32 位小写十六进制字符" {
 			t.Errorf("%s 非法 uuid detail = %q", method, got)
 		}
 

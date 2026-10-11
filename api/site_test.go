@@ -564,20 +564,28 @@ func TestAdminUsers(t *testing.T) {
 		}
 	}
 
-	// 创建时可以指定 uuid：带横线 + 大写也会被归一成 32 位小写
+	// 创建时可以指定 uuid：带横线的小写照收并归一成 32 位无横线小写
 	explicit := "0123456789abcdef0123456789abcdef"
 	recorder = testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
 		"username":    "anchored",
 		"password":    "anchor123",
 		"player_name": "anchored",
 		"role":        "normal",
-		"uuid":        "01234567-89AB-CDEF-0123-456789ABCDEF",
+		"uuid":        "01234567-89ab-cdef-0123-456789abcdef",
 	}, adminToken)
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("指定 uuid 创建 = %d（%s）", recorder.Code, recorder.Body.String())
 	}
 	if got := object(t, testenv.Decode(t, recorder), "user")["uuid"]; got != explicit {
 		t.Errorf("指定 uuid 没生效: %v（想要 %s）", got, explicit)
+	}
+	// 大写不收（前端会折成小写，后端严格）
+	recorder = testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
+		"username": "upperuuid", "password": "upper123", "player_name": "upperuuid",
+		"uuid": "01234567-89AB-CDEF-0123-456789ABCDEF",
+	}, adminToken)
+	if recorder.Code != http.StatusBadRequest || detail(t, recorder) != "UUID 必须是 32 位小写十六进制字符" {
+		t.Fatalf("大写 uuid = %d（%s）", recorder.Code, recorder.Body.String())
 	}
 	// 非法 uuid → 400，文案跟着语言走
 	recorder = testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
@@ -586,7 +594,7 @@ func TestAdminUsers(t *testing.T) {
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("非法 uuid = %d（%s）", recorder.Code, recorder.Body.String())
 	}
-	if got := detail(t, recorder); got != "UUID 必须是 32 位十六进制字符" {
+	if got := detail(t, recorder); got != "UUID 必须是 32 位小写十六进制字符" {
 		t.Errorf("非法 uuid 文案 = %q", got)
 	}
 	// uuid 撞车 → 409

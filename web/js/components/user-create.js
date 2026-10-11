@@ -40,7 +40,8 @@ export const UserCreate = {
           <label class="field">
             <span>UUID</span>
             <input v-model.trim="store.state.draft.uuid" type="text" spellcheck="false"
-                   autocomplete="off" :placeholder="t('32 位小写十六进制，留空则自动推导')">
+                   autocomplete="off" :placeholder="t('32 位小写十六进制，横线会被去掉；留空则自动推导')"
+                   @blur="store.lowerDraftUuid()">
           </label>
           <label class="field">
             <span>{{ t("身份组") }}</span>
