@@ -30,13 +30,13 @@ func TestArgonConcurrencyClampedToAtLeastOne(t *testing.T) {
 	ArgonConcurrency = 0
 	t.Cleanup(func() { ArgonConcurrency = original })
 
-	instance := openInstance(t, func(cfg *Config) { cfg.AdminPassword = "password-1234" })
+	instance := openInstance(t, func(cfg *Config) { cfg.AdminPassword = "password_1234" })
 	if got := cap(instance.argon); got != 1 {
 		t.Fatalf("信号量容量 = %d，想要 1", got)
 	}
 
 	done := make(chan bool, 1)
-	go func() { done <- instance.VerifyCredentials("admin", "password-1234") != nil }()
+	go func() { done <- instance.VerifyCredentials("admin", "password_1234") != nil }()
 	select {
 	case ok := <-done:
 		if !ok {
@@ -52,7 +52,7 @@ func TestArgonConcurrencyClampedToAtLeastOne(t *testing.T) {
 func TestFirstAdminPlayerNameIsFixed(t *testing.T) {
 	instance := openInstance(t, func(cfg *Config) {
 		cfg.AdminUsername = "first.admin@example.com"
-		cfg.AdminPassword = "s3cret-password"
+		cfg.AdminPassword = "s3cret_password"
 	})
 	user := instance.Store.UserByUsername("first.admin@example.com")
 	if user == nil {
@@ -86,7 +86,7 @@ func TestReadyFailsWithoutSigningKeys(t *testing.T) {
 // RefreshTokens 要把「uuid 从库里消失」的账号的 Yggdrasil 内存会话一并清掉：
 // accessToken 只活在内存里，不显式作废就会一直有效。
 func TestRefreshTokensRevokesSessionsOfVanishedUsers(t *testing.T) {
-	instance := openInstance(t, func(cfg *Config) { cfg.AdminPassword = "password-1234" })
+	instance := openInstance(t, func(cfg *Config) { cfg.AdminPassword = "password_1234" })
 
 	steve, err := instance.Store.CreateUser("steve", "steve123", "steve", "normal")
 	if err != nil {

@@ -47,10 +47,11 @@ func TestFieldLimitsCountRunesNotBytes(t *testing.T) {
 	if _, err := core.NormalizeUsername(strings.Repeat("a", core.MaxUsernameLength+1)); err == nil {
 		t.Errorf("%d 个字符的账号名应当被拒", core.MaxUsernameLength+1)
 	}
-	if _, err := core.NormalizePassword(strings.Repeat("密", core.MaxPasswordLength)); err != nil {
+	// 密码现在是白名单字符集（只收 ASCII），「按字符不按字节」由下面的标签来证
+	if _, err := core.NormalizePassword(strings.Repeat("a", core.MaxPasswordLength)); err != nil {
 		t.Errorf("%d 个字符的密码应当通过: %v", core.MaxPasswordLength, err)
 	}
-	if _, err := core.NormalizePassword(strings.Repeat("密", core.MaxPasswordLength+1)); err == nil {
+	if _, err := core.NormalizePassword(strings.Repeat("a", core.MaxPasswordLength+1)); err == nil {
 		t.Errorf("%d 个字符的密码应当被拒", core.MaxPasswordLength+1)
 	}
 	if tags, err := core.NormalizeTags(nil); err != nil || len(tags) != 0 {

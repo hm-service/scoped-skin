@@ -41,7 +41,7 @@ func TestFirstStartCreatesSingleAdmin(t *testing.T) {
 
 	instance := openInstance(t, func(cfg *Config) {
 		cfg.AdminUsername = "root"
-		cfg.AdminPassword = "s3cret-password"
+		cfg.AdminPassword = "s3cret_password"
 	})
 
 	users, err := instance.Store.Users()
@@ -56,7 +56,7 @@ func TestFirstStartCreatesSingleAdmin(t *testing.T) {
 	if admin.UUID != core.OfflineUUID("admin") {
 		t.Errorf("首建管理员的 UUID 应当按角色名 admin 推导，实际 %s", admin.UUID)
 	}
-	if instance.Store.Authenticate("root", "s3cret-password") == nil {
+	if instance.Store.Authenticate("root", "s3cret_password") == nil {
 		t.Fatalf("ADMIN_PASSWORD 没生效")
 	}
 	if instance.Store.Authenticate("root", "admin") != nil {
@@ -110,7 +110,7 @@ func TestReopenKeepsExistingAccounts(t *testing.T) {
 			Version:       "test",
 			BuiltinFS:     builtin.Files,
 			AdminUsername: "root",
-			AdminPassword: "first-password",
+			AdminPassword: "first_password",
 		})
 		if err != nil {
 			t.Fatalf("Open: %v", err)
@@ -156,14 +156,14 @@ func TestVerifyCredentialsUnderConcurrency(t *testing.T) {
 	t.Parallel()
 
 	instance := openInstance(t, func(cfg *Config) {
-		cfg.AdminPassword = "password-1234"
+		cfg.AdminPassword = "password_1234"
 	})
 
 	var group sync.WaitGroup
 	results := make([]bool, 8)
 	for index := range results {
 		group.Go(func() {
-			results[index] = instance.VerifyCredentials("admin", "password-1234") != nil
+			results[index] = instance.VerifyCredentials("admin", "password_1234") != nil
 		})
 	}
 	group.Wait()

@@ -3,7 +3,7 @@
  * 组件本身不持有标签，只把 add / remove 抛给上层。
  */
 import { t } from "../i18n.js";
-import { MATCH_LABELS, hasTag, matchTags } from "../tags.js";
+import { hasTag, matchTags } from "../tags.js";
 import { computed, nextTick, ref, watch } from "../vue.js";
 
 export const TagCombo = {
@@ -95,7 +95,6 @@ export const TagCombo = {
 
     return {
       input, text, open, index, needle, suggestions,
-      MATCH_LABELS,
       add, apply, move, onInput, onKeydown, onBlur, focusAndShow,
     };
   },
@@ -121,7 +120,7 @@ export const TagCombo = {
               class="sug-item" :class="{ active: i === index, create: entry.action === 'create' }"
               :title="entry.action === 'create'
                 ? t('新建标签 {tag}', { tag: entry.tag })
-                : t('{match}匹配 · 用过 {count} 次', { match: MATCH_LABELS[entry.rank], count: entry.count })"
+                : t('用过 {count} 次', { count: entry.count })"
               @mousedown.prevent="apply(entry)">
             <template v-if="entry.action === 'create'">
               <svg class="icon"><use href="#i-plus"/></svg>
@@ -132,7 +131,6 @@ export const TagCombo = {
                 {{ entry.tag.slice(0, entry.from) }}<mark>{{ entry.tag.slice(entry.from, entry.from + needle.length) }}</mark>{{ entry.tag.slice(entry.from + needle.length) }}
               </span>
               <span v-else>{{ entry.tag }}</span>
-              <span v-if="entry.from >= 0" class="sug-kind">{{ MATCH_LABELS[entry.rank] }}</span>
               <span class="sug-count">{{ t("用过 {count} 次", { count: entry.count }) }}</span>
             </template>
           </li>

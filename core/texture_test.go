@@ -133,12 +133,12 @@ func TestNormalizeUserFields(t *testing.T) {
 	}
 	// 账号名只收小写字母 + 数字 + @ + .（邮箱形状够用）
 	// 规则是「字符集」而不是邮箱语法：@ 与 . 可以出现在任何位置，下划线不在集合里
-	for _, bad := range []string{"ste ve", "Steve", "steve!", "中文", "steve_bot", "a/b"} {
+	for _, bad := range []string{"ste ve", "Steve", "steve!", "中文", "steve-bot", "a/b"} {
 		if _, err := core.NormalizeUsername(bad); err == nil {
 			t.Errorf("账号名 %q 不该通过", bad)
 		}
 	}
-	for _, good := range []string{"steve", "steve.bot", "a.b@c.d", "user123@example.com", "@"} {
+	for _, good := range []string{"steve", "steve_bot", "steve.bot", "a.b@c.d", "user123@example.com", "@"} {
 		if _, err := core.NormalizeUsername(good); err != nil {
 			t.Errorf("账号名 %q 应当通过: %v", good, err)
 		}
@@ -189,8 +189,13 @@ func TestNormalizeUserFields(t *testing.T) {
 	if _, err := core.NormalizePassword(strings.Repeat("x", core.MaxPasswordLength+1)); err == nil {
 		t.Fatalf("超长密码不该通过")
 	}
-	if got, err := core.NormalizePassword(" 空格也算密码 "); err != nil || got != " 空格也算密码 " {
-		t.Fatalf("密码不该被 trim: %q, %v", got, err)
+	// 密码走白名单字符集：空白/符号（以及复制粘贴带进来的零宽字符）一律拒，
+	// 不做 trim —— 不然后端会悄悄改掉用户输入的密码。
+	if _, err := core.NormalizePassword(" hunter2x"); err == nil {
+		t.Fatalf("带空格的密码不该通过")
+	}
+	if got, err := core.NormalizePassword("hunter_2x"); err != nil || got != "hunter_2x" {
+		t.Fatalf("合法密码应当原样返回: %q, %v", got, err)
 	}
 }
 

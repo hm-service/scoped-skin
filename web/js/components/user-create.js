@@ -30,17 +30,17 @@ export const UserCreate = {
           <label class="field">
             <span>{{ t("账号") }}</span>
             <input v-model.trim="store.state.draft.username" type="text" maxlength="32"
-                   spellcheck="false" autocomplete="off" :placeholder="t('小写字母 / 数字 / @ / .')" required>
+                   spellcheck="false" autocomplete="off" :placeholder="t('小写字母 / 数字 / @ / . / _')" required>
           </label>
           <label class="field">
             <span>{{ t("密码") }}</span>
-            <input v-model="store.state.draft.password" type="password"
-                   autocomplete="new-password" :placeholder="t('登录密码')" required>
+            <input v-model="store.state.draft.password" type="password" minlength="8" maxlength="64"
+                   autocomplete="new-password" :placeholder="t('8-64 位，大小写字母 / 数字 / 下划线')" required>
           </label>
           <label class="field">
             <span>UUID</span>
             <input v-model.trim="store.state.draft.uuid" type="text" spellcheck="false"
-                   autocomplete="off" :placeholder="t('留空则由游戏内名称推导')">
+                   autocomplete="off" :placeholder="t('32 位小写十六进制，留空则自动推导')">
           </label>
           <label class="field">
             <span>{{ t("身份组") }}</span>

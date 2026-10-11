@@ -30,7 +30,7 @@ export const UserEditor = {
           <label class="field">
             <span>UUID</span>
             <input v-model.trim="store.state.editing.uuid" type="text" spellcheck="false"
-                   autocomplete="off" :placeholder="t('32 位十六进制，可带横线')">
+                   autocomplete="off" :placeholder="t('32 位小写十六进制，可带横线')">
           </label>
           <label class="field">
             <span>{{ t("身份组") }}</span>
@@ -42,8 +42,8 @@ export const UserEditor = {
           </label>
           <label class="field">
             <span>{{ t("新密码") }}</span>
-            <input v-model="store.state.editing.password" type="password" autocomplete="new-password"
-                   :placeholder="t('留空不改')">
+            <input v-model="store.state.editing.password" type="password" minlength="8" maxlength="64"
+                   autocomplete="new-password" :placeholder="t('留空不改；8-64 位大小写字母 / 数字 / 下划线')">
           </label>
 
           <div class="form-actions">

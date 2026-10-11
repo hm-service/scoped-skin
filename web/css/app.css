@@ -667,13 +667,6 @@ button { cursor: pointer; }
 }
 .sug-item.active { background: var(--accent-soft); color: var(--accent-ink); }
 .sug-item mark { background: transparent; color: inherit; font-weight: 700; }
-.sug-item .sug-kind {
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--paper-sunk);
-  color: var(--ink-faint);
-  font-size: 10px;
-}
 .sug-item .sug-count { margin-left: auto; color: var(--ink-faint); font-size: 11px; }
 .sug-item.create { color: var(--accent-ink); }
 .sug-item.create .icon { width: 13px; height: 13px; }

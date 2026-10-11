@@ -158,7 +158,7 @@ func TestCreateUserStoresArgon2idHash(t *testing.T) {
 	}
 
 	// 账号名唯一：重复建号会被拒，且不动已有的行
-	if _, err := store.CreateUser("steve", "另一个密码", "steve2", "normal"); err == nil {
+	if _, err := store.CreateUser("steve", "hunter2x", "steve2", "normal"); err == nil {
 		t.Fatalf("重复的账号名应当被拒")
 	}
 	if again := store.UserByUsername("steve"); again.PasswordHash != steve.PasswordHash {
@@ -222,13 +222,13 @@ func TestUserCRUD(t *testing.T) {
 		t.Fatalf("改不存在的账号应当回 (nil, nil): %+v (%v)", gone, err)
 	}
 
-	if _, err := store.UpdateUser(moved.UUID, map[string]string{"password": "新密码12345"}); err != nil {
+	if _, err := store.UpdateUser(moved.UUID, map[string]string{"password": "changed_12345"}); err != nil {
 		t.Fatalf("改密码失败: %v", err)
 	}
 	if store.Authenticate("renamed@example.com", "hunter2x") != nil {
 		t.Fatalf("旧密码还能用")
 	}
-	if store.Authenticate("renamed@example.com", "新密码12345") == nil {
+	if store.Authenticate("renamed@example.com", "changed_12345") == nil {
 		t.Fatalf("新密码用不了")
 	}
 

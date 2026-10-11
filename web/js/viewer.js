@@ -50,6 +50,12 @@ const KEY_DISTANCE = 60; // 相机坐标系里的灯位（约等于默认视距�
 /** three 的 MOUSE.PAN：中键按下时平移（vendor 默认中键是 DOLLY，推拉）。 */
 const MOUSE_PAN = 2;
 
+/** 中键双击的判定窗口（毫秒）。 */
+const DOUBLE_CLICK_MS = 350;
+
+/** 鼠标中键的 event.button 值（three 的 MOUSE.MIDDLE）。 */
+const MIDDLE_BUTTON = 1;
+
 /** 平移的软边界（世界单位，模型高约 32）：target 离原点这么远就拦住，模型还不至于被推出画面。 */
 const MAX_PAN = 20;
 
@@ -90,6 +96,7 @@ export class Preview3D {
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(canvas.parentElement);
 
+    this.bindMiddleDoubleClick();
     this.patchDrawLoop();
   }
 
@@ -133,6 +140,39 @@ export class Preview3D {
     };
     document.addEventListener("visibilitychange", syncVisibility);
     syncVisibility();
+  }
+
+  /**
+   * 中键双击 = 重置视角。
+   *
+   * 中键单击 / 拖动是平移（OrbitControls 的 PAN），所以只有「两次按下之间没拖动过」才算双击 ——
+   * 不然每次平移完顺手再按一下就会把视角弹回去。用指针事件，和 OrbitControls 看的是同一套事件；
+   * pointermove 的 buttons 位掩码里 4 就是中键。
+   */
+  bindMiddleDoubleClick() {
+    let lastClick = 0;
+    let dragged = false;
+    const canvas = this.canvas;
+    canvas.addEventListener("pointerdown", (event) => {
+      if (event.button === MIDDLE_BUTTON) dragged = false;
+    });
+    canvas.addEventListener("pointermove", (event) => {
+      if (event.buttons & 4) dragged = true;
+    });
+    canvas.addEventListener("pointerup", (event) => {
+      if (event.button !== MIDDLE_BUTTON) return;
+      if (dragged) {
+        lastClick = 0; // 拖动过：这一下不算点击，也不参与双击
+        return;
+      }
+      const now = performance.now();
+      if (now - lastClick < DOUBLE_CLICK_MS) {
+        lastClick = 0;
+        this.resetPose();
+        return;
+      }
+      lastClick = now;
+    });
   }
 
   resize() {

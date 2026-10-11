@@ -555,11 +555,11 @@ func TestAdminUsers(t *testing.T) {
 	}
 
 	// 账号名只收小写字母 + 数字 + @ + .：大写、下划线、空格都在门外
-	for _, bad := range []string{"Tester", "test_er", "test er", "测试"} {
+	for _, bad := range []string{"Tester", "test er", "测试", "test-er"} {
 		recorder := testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
 			"username": bad, "password": "tester123", "player_name": "tester2", "role": "normal",
 		}, adminToken)
-		if recorder.Code != http.StatusBadRequest || detail(t, recorder) != "账号名只能是小写字母、数字、@ 和 ." {
+		if recorder.Code != http.StatusBadRequest || detail(t, recorder) != "账号名只能是小写字母、数字、@、. 和 _" {
 			t.Errorf("账号名 %q = %d（%s）", bad, recorder.Code, recorder.Body.String())
 		}
 	}

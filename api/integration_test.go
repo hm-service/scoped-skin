@@ -39,7 +39,7 @@ func TestAdminCredentialChangeKillsYggdrasilSession(t *testing.T) {
 	// 3. 管理员改掉 steve 的密码
 	adminToken := testenv.Token(t, instance, "admin")
 	recorder = testenv.Do(handler, http.MethodPatch, "/api/admin/users/"+playerUUID,
-		map[string]any{"password": "换个密码12345"}, adminToken)
+		map[string]any{"password": "changed_12345"}, adminToken)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("改密码失败: %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -56,7 +56,7 @@ func TestAdminCredentialChangeKillsYggdrasilSession(t *testing.T) {
 	}
 	// 6. 新密码能用新令牌换出来
 	recorder = testenv.Do(handler, http.MethodPost, "/api/yggdrasil/authserver/authenticate",
-		map[string]any{"username": "steve", "password": "换个密码12345"}, "")
+		map[string]any{"username": "steve", "password": "changed_12345"}, "")
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("新密码应当能登录: %d %s", recorder.Code, recorder.Body.String())
 	}

@@ -16,14 +16,16 @@ import (
 // DESIGN.md 4.1 / 4.2 里的枚举量与字段上限。
 const (
 	MaxUsernameLength = 32
-	MaxPasswordLength = 256
 
 	// DESIGN.md 5.2：分块读（或 base64 解码后）超过这个上限就拒。哪怕 64×64 RGBA
 	// 满熵（压不动）也才 16.5 KiB，32 KiB 留了一倍余量。
 	MaxUploadBytes = 32 * 1024
 
-	// DESIGN.md 4.1：密码长度下限，只起个「别用太短的」提醒作用。
+	// DESIGN.md 4.1：密码长度区间。字符集见 passwordPattern —— 白名单是为了挡住
+	// 「复制粘贴带进来的零宽空格 / 不可见字符」：这类字符用户自己都复现不出来，
+	// 最后就变成「密码明明对却登不上」。上限 64 对密码短语也够。
 	MinPasswordLength = 8
+	MaxPasswordLength = 64
 
 	// DESIGN.md 4.1：游戏内角色名的长度区间。上限沿用 16（与正版一致的量级），
 	// 下限 3 是为了别出现一个字符的名字；字符集见 playerNamePattern。
@@ -88,8 +90,10 @@ const DefaultRole = "normal"
 
 var (
 	uuidPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
-	// 账号名（登录用）只允许小写字母 + 数字 + @ + .：它当邮箱使也够，且不必再单独挡空白。
-	usernamePattern = regexp.MustCompile(`^[a-z0-9@.]+$`)
+	// 账号名（登录用）只允许小写字母 + 数字 + @ + . + _：它当邮箱使也够，且不必再单独挡空白。
+	usernamePattern = regexp.MustCompile(`^[a-z0-9@._]+$`)
+	// 密码只允许大小写字母 + 数字 + 下划线，理由见 MinPasswordLength 的注释。
+	passwordPattern = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
 	// 允许大小写字母 + 数字 + 下划线；长度区间从常量拼，免得规则与文案两处漂移。
 	playerNamePattern = regexp.MustCompile(fmt.Sprintf(
 		`^[A-Za-z0-9_]{%d,%d}$`, MinPlayerNameLength, MaxPlayerNameLength))
@@ -181,6 +185,10 @@ func NormalizeRole(value string) (string, error) {
 	return "", invalid("valid.role", strings.Join(Roles, " / "))
 }
 
+// NormalizePassword 密码：DESIGN.md 4.1 规定只允许大小写字母 + 数字 + 下划线，长度 8-64。
+//
+// 不做 trim：空白字符本来就不在字符集里，多一个 trim 只会让「贴进来的前后空格」变成
+// 静默改动。分两步报错是为了文案能说清是哪一条不合适。
 func NormalizePassword(value string) (string, error) {
 	if value == "" {
 		return "", invalid("valid.password.empty")
@@ -189,6 +197,9 @@ func NormalizePassword(value string) (string, error) {
 		return "", invalid("valid.password.short", MinPasswordLength)
 	} else if length > MaxPasswordLength {
 		return "", invalid("valid.password.long", MaxPasswordLength)
+	}
+	if !passwordPattern.MatchString(value) {
+		return "", invalid("valid.password.charset")
 	}
 	return value, nil
 }

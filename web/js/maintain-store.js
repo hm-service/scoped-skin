@@ -18,16 +18,26 @@ const emptyDraft = () => ({ username: "", player_name: "", password: "", role: "
 /** 与 core 的规则保持一致：角色名 ^[A-Za-z0-9_]{3,16}$、UUID 32 位十六进制（可带横线）。
  *  前端先拦一道只是为了不用等一次往返，真正的闸门仍在后端。 */
 const PLAYER_NAME_PATTERN = /^[A-Za-z0-9_]{3,16}$/;
-const USERNAME_PATTERN = /^[a-z0-9@.]+$/;
+const USERNAME_PATTERN = /^[a-z0-9@._]+$/;
+const PASSWORD_PATTERN = /^[A-Za-z0-9_]+$/;
 const MAX_USERNAME_LENGTH = 32;
+const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_LENGTH = 64;
 const UUID_PATTERN = /^(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
 
-/** 校验一组账号字段；返回错误文案，通过则返回空串。 */
-function validateAccount({ username, player_name, uuid }) {
+/** 校验一组账号字段；返回错误文案，通过则返回空串。密码留空表示不改（编辑时）。 */
+function validateAccount({ username, player_name, uuid, password }) {
   if ([...username].length > MAX_USERNAME_LENGTH) return t("账号名最长 32 个字符");
-  if (!USERNAME_PATTERN.test(username)) return t("账号名只能是小写字母、数字、@ 和 .");
+  if (!USERNAME_PATTERN.test(username)) return t("账号名只能是小写字母、数字、@、. 和 _");
   if (!PLAYER_NAME_PATTERN.test(player_name)) return t("游戏内名称只能是大写字母、小写字母、数字或下划线，长度 3-16");
   if (uuid && !UUID_PATTERN.test(uuid)) return t("UUID 必须是 32 位十六进制字符");
+  if (password) {
+    const length = [...password].length;
+    if (length < MIN_PASSWORD_LENGTH || length > MAX_PASSWORD_LENGTH) {
+      return t("密码长度 {min}-{max} 位", { min: MIN_PASSWORD_LENGTH, max: MAX_PASSWORD_LENGTH });
+    }
+    if (!PASSWORD_PATTERN.test(password)) return t("密码只能是大写字母、小写字母、数字或下划线");
+  }
   return "";
 }
 
@@ -108,6 +118,7 @@ function createStore() {
       username: draft.username.trim(),
       player_name: draft.player_name.trim(),
       uuid: draft.uuid.trim(),
+      password: draft.password,
     });
     if (invalid) {
       toastError(invalid);
@@ -163,6 +174,7 @@ function createStore() {
       username: editing.username.trim(),
       player_name: editing.player_name.trim(),
       uuid: editing.uuid.trim(),
+      password: editing.password,
     });
     if (invalid) {
       toastError(invalid);

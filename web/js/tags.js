@@ -1,8 +1,4 @@
 /** 标签相关的小工具：配色、排序、模糊匹配、代称（纯函数，不碰 DOM）。 */
-import { t } from "./i18n.js";
-
-/** 匹配级别：前缀 → 中缀 → 后缀。 */
-export const MATCH_LABELS = [t("前缀"), t("中缀"), t("后缀")];
 
 /** 同一个标签永远落在同一个配色上。 */
 export function tagColor(tag) {
@@ -26,8 +22,8 @@ export const byPopularity = (a, b) =>
   b.count - a.count || a.tag.localeCompare(b.tag, "zh");
 
 /**
- * 模糊匹配：前缀(0) → 中缀(1) → 后缀(2)，同级按使用次数、名称排序；
- * 末尾在没有同名标签、也没被选中时补一条「新建」。
+ * 模糊匹配：命中位置越靠前排得越前（0 → 1 → 2），同级按使用次数、名称排序。
+ * rank 只用于排序，不给界面看。
  */
 export function matchTags(query, library, selected = [], limit = 8) {
   const text = query.trim();
