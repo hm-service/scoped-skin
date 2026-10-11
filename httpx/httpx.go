@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 )
 
@@ -57,7 +58,7 @@ func NewProxies(spec string) (*Proxies, error) {
 		spec = DefaultTrustedProxy
 	}
 	proxies := &Proxies{}
-	for _, item := range strings.Split(spec, ",") {
+	for item := range strings.SplitSeq(spec, ",") {
 		item = strings.TrimSpace(item)
 		if item == "" {
 			continue
@@ -135,8 +136,8 @@ func splitForwarded(header string) []string {
 
 func reverse(values []string) []string {
 	out := make([]string, 0, len(values))
-	for index := len(values) - 1; index >= 0; index-- {
-		out = append(out, values[index])
+	for _, value := range slices.Backward(values) {
+		out = append(out, value)
 	}
 	return out
 }

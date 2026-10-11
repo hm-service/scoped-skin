@@ -269,6 +269,13 @@ func TestLibraryQueryParameterEdges(t *testing.T) {
 	}
 
 	// 空 q → tokens 是空数组（不是 null）
+	// 搜索串长度上限：正常用碰不到，超了直接 400，不去拼 SQL
+	recorder = testenv.Do(handler, http.MethodGet,
+		"/api/library?category=skin&q="+url.QueryEscape(strings.Repeat("标", core.MaxQueryLength+1)), nil, token)
+	if recorder.Code != http.StatusBadRequest || detail(t, recorder) != "搜索串最长 256 个字符" {
+		t.Fatalf("超长搜索串 = %d（%s）", recorder.Code, recorder.Body.String())
+	}
+
 	recorder = testenv.Do(handler, http.MethodGet, "/api/library?category=skin&q=", nil, token)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("空 q 状态码 = %d，想要 200（%s）", recorder.Code, recorder.Body.String())

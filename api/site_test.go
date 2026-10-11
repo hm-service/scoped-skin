@@ -15,6 +15,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -42,7 +43,7 @@ func captureLogs(t *testing.T) func() []map[string]any {
 
 	return func() []map[string]any {
 		records := []map[string]any{}
-		for _, line := range strings.Split(strings.TrimSpace(buffer.String()), "\n") {
+		for line := range strings.SplitSeq(strings.TrimSpace(buffer.String()), "\n") {
 			var record map[string]any
 			if err := json.Unmarshal([]byte(line), &record); err == nil {
 				records = append(records, record)
@@ -54,9 +55,9 @@ func captureLogs(t *testing.T) func() []map[string]any {
 
 func loggedIP(t *testing.T, records []map[string]any, path string) string {
 	t.Helper()
-	for index := len(records) - 1; index >= 0; index-- {
-		if records[index]["msg"] == "HTTP Request" && records[index]["path"] == path {
-			ip, _ := records[index]["ip"].(string)
+	for _, record := range slices.Backward(records) {
+		if record["msg"] == "HTTP Request" && record["path"] == path {
+			ip, _ := record["ip"].(string)
 			return ip
 		}
 	}
@@ -97,8 +98,8 @@ func doUpload(t *testing.T, handler http.Handler, token string, fields [][2]stri
 func encodePNG(t *testing.T, width, height int) []byte {
 	t.Helper()
 	canvas := image.NewRGBA(image.Rect(0, 0, width, height))
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+	for y := range height {
+		for x := range width {
 			canvas.Set(x, y, color.RGBA{R: uint8(x * 3), G: uint8(y * 5), B: 0x40, A: 255})
 		}
 	}
@@ -553,6 +554,49 @@ func TestAdminUsers(t *testing.T) {
 		t.Errorf("me = %v，想要 %s", payload["me"], adminUUID)
 	}
 
+	// 账号名只收小写字母 + 数字 + @ + .：大写、下划线、空格都在门外
+	for _, bad := range []string{"Tester", "test_er", "test er", "测试"} {
+		recorder := testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
+			"username": bad, "password": "tester123", "player_name": "tester2", "role": "normal",
+		}, adminToken)
+		if recorder.Code != http.StatusBadRequest || detail(t, recorder) != "账号名只能是小写字母、数字、@ 和 ." {
+			t.Errorf("账号名 %q = %d（%s）", bad, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	// 创建时可以指定 uuid：带横线 + 大写也会被归一成 32 位小写
+	explicit := "0123456789abcdef0123456789abcdef"
+	recorder = testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
+		"username":    "anchored",
+		"password":    "anchor123",
+		"player_name": "anchored",
+		"role":        "normal",
+		"uuid":        "01234567-89AB-CDEF-0123-456789ABCDEF",
+	}, adminToken)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("指定 uuid 创建 = %d（%s）", recorder.Code, recorder.Body.String())
+	}
+	if got := object(t, testenv.Decode(t, recorder), "user")["uuid"]; got != explicit {
+		t.Errorf("指定 uuid 没生效: %v（想要 %s）", got, explicit)
+	}
+	// 非法 uuid → 400，文案跟着语言走
+	recorder = testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
+		"username": "baduuid", "password": "baduuid12", "player_name": "baduuid", "uuid": "not-a-uuid",
+	}, adminToken)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("非法 uuid = %d（%s）", recorder.Code, recorder.Body.String())
+	}
+	if got := detail(t, recorder); got != "UUID 必须是 32 位十六进制字符" {
+		t.Errorf("非法 uuid 文案 = %q", got)
+	}
+	// uuid 撞车 → 409
+	recorder = testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
+		"username": "clash", "password": "clash123", "player_name": "clash", "uuid": explicit,
+	}, adminToken)
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("uuid 撞车 = %d（%s）", recorder.Code, recorder.Body.String())
+	}
+
 	list := testenv.Do(handler, http.MethodGet, "/api/admin/users", nil, adminToken)
 	if list.Code != http.StatusOK {
 		t.Fatalf("用户列表状态码 = %d，想要 200", list.Code)
@@ -725,12 +769,12 @@ func TestLanguageNegotiation(t *testing.T) {
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("非法游戏内名称 = %d（%s）", recorder.Code, recorder.Body.String())
 	}
-	if got := detail(t, recorder); got != "Player name takes lowercase letters, digits and underscore, 1–16 characters" {
+	if got := detail(t, recorder); got != "Player name takes letters, digits and underscore, 3–16 characters" {
 		t.Errorf("en 校验文案 = %q", got)
 	}
 	recorder = call(http.MethodPatch, "/api/admin/users/"+steveUUID, "zh-Hans",
 		map[string]any{"player_name": "Bad!"}, token)
-	if got := detail(t, recorder); got != "游戏内名称只能是小写字母、数字或下划线，长度 1-16" {
+	if got := detail(t, recorder); got != "游戏内名称只能是大小写字母、数字或下划线，长度 3-16" {
 		t.Errorf("zh 校验文案 = %q", got)
 	}
 

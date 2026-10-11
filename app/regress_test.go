@@ -47,33 +47,14 @@ func TestArgonConcurrencyClampedToAtLeastOne(t *testing.T) {
 	}
 }
 
-// playerNameFor 是首次启动建管理员时把账号名压成合法游戏内名称的地方。
-func TestPlayerNameForSanitizes(t *testing.T) {
-	cases := map[string]string{
-		"root":                 "root",
-		"Admin.User":           "adminuser",
-		"STEVE_01":             "steve_01",
-		"中文名字":                 DefaultAdminUsername, // 一个合法字符都不剩 → 兜底
-		"":                     DefaultAdminUsername,
-		"   ":                  DefaultAdminUsername,
-		"a2345678901234567890": "a234567890123456", // 截到 16
-		"A2345678901234567-":   "a234567890123456",
-	}
-	for input, want := range cases {
-		if got := playerNameFor(input); got != want {
-			t.Errorf("playerNameFor(%q) = %q，想要 %q", input, got, want)
-		}
-	}
-}
-
-// 首次启动的管理员账号名里没有任何合法字符时，游戏内名称要兜底成 admin，
-// 否则建号会直接失败（角色名必须匹配 ^[a-z0-9_]{1,16}$）。
-func TestFirstAdminPlayerNameFallsBack(t *testing.T) {
+// 首次启动：ADMIN_USERNAME 只影响账号登录名，角色名恒为 admin ——
+// 所以像邮箱这种过不了角色名规则（有 @ 与 .）的账号名也能起号。
+func TestFirstAdminPlayerNameIsFixed(t *testing.T) {
 	instance := openInstance(t, func(cfg *Config) {
-		cfg.AdminUsername = "中文管理员"
+		cfg.AdminUsername = "first.admin@example.com"
 		cfg.AdminPassword = "s3cret-password"
 	})
-	user := instance.Store.UserByUsername("中文管理员")
+	user := instance.Store.UserByUsername("first.admin@example.com")
 	if user == nil {
 		t.Fatalf("管理员账号没建出来")
 	}

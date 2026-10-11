@@ -95,18 +95,18 @@ export const StagePane = {
         </button>
         <!-- 背面三档：披风 / 鞘翅 / 隐藏（游戏里鞘翅用的就是披风那张材质） -->
         <div class="seg seg-back" :aria-label="t('背面装备')">
-          <button :class="{ on: store.state.backEquipment === 'cape' }" :title="t('披风')"
-                  :aria-label="t('披风')" :aria-pressed="String(store.state.backEquipment === 'cape')"
+          <button :class="{ on: store.stageBackEquipment === 'cape' }" :title="t('披风')"
+                  :aria-label="t('披风')" :aria-pressed="String(store.stageBackEquipment === 'cape')"
                   @click="store.setBackEquipment('cape')">
             <svg class="icon"><use href="#i-cape"/></svg>
           </button>
-          <button :class="{ on: store.state.backEquipment === 'elytra' }" :title="t('鞘翅')"
-                  :aria-label="t('鞘翅')" :aria-pressed="String(store.state.backEquipment === 'elytra')"
+          <button :class="{ on: store.stageBackEquipment === 'elytra' }" :title="t('鞘翅')"
+                  :aria-label="t('鞘翅')" :aria-pressed="String(store.stageBackEquipment === 'elytra')"
                   @click="store.setBackEquipment('elytra')">
             <svg class="icon"><use href="#i-elytra"/></svg>
           </button>
-          <button :class="{ on: store.state.backEquipment === null }" :title="t('隐藏')"
-                  :aria-label="t('隐藏')" :aria-pressed="String(store.state.backEquipment === null)"
+          <button :class="{ on: !store.stageBackEquipment }" :title="t('隐藏')"
+                  :aria-label="t('隐藏')" :aria-pressed="String(!store.stageBackEquipment)"
                   @click="store.setBackEquipment(null)">
             <svg class="icon"><use href="#i-eye-off"/></svg>
           </button>

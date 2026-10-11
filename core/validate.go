@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/png"
 	"regexp"
+	"slices"
 	"strings"
 
 	"scoped-skin/i18n"
@@ -23,6 +24,16 @@ const (
 
 	// DESIGN.md 4.1：密码长度下限，只起个「别用太短的」提醒作用。
 	MinPasswordLength = 8
+
+	// DESIGN.md 4.1：游戏内角色名的长度区间。上限沿用 16（与正版一致的量级），
+	// 下限 3 是为了别出现一个字符的名字；字符集见 playerNamePattern。
+	MinPlayerNameLength = 3
+	MaxPlayerNameLength = 16
+
+	// DESIGN.md 3.6：列表搜索串（q）的长度上限。搜索串是「若干标签用空白分隔」，
+	// 一条标签最长 MaxTagLength、最多 MaxTagsPerAsset 条，256 是它们的宽松上界 ——
+	// 目的是别让一个 1 MiB 的查询串进去拼出几万条 LIKE。
+	MaxQueryLength = 256
 
 	// DESIGN.md 4.2：贴图用标签代替自由命名（库里已有的标签即词表，也可随时手动输入），
 	// 但数量与单条长度都要有上限，否则标签栏就能拿来塞存储。上限按「一屏看得完」定：
@@ -58,10 +69,8 @@ func KindsOf(category string) []string {
 // NormalizeKind 只接受 DESIGN.md 4.2 里那几个枚举值。
 func NormalizeKind(value string) (string, error) {
 	cleaned := strings.ToLower(strings.TrimSpace(value))
-	for _, known := range Kinds {
-		if cleaned == known {
-			return cleaned, nil
-		}
+	if slices.Contains(Kinds, cleaned) {
+		return cleaned, nil
 	}
 	return "", invalid("valid.kind", strings.Join(Kinds, " / "))
 }
@@ -78,9 +87,13 @@ const (
 const DefaultRole = "normal"
 
 var (
-	uuidPattern       = regexp.MustCompile(`^[0-9a-f]{32}$`)
-	playerNamePattern = regexp.MustCompile(`^[a-z0-9_]{1,16}$`)
-	pngMagic          = []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+	uuidPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
+	// 账号名（登录用）只允许小写字母 + 数字 + @ + .：它当邮箱使也够，且不必再单独挡空白。
+	usernamePattern = regexp.MustCompile(`^[a-z0-9@.]+$`)
+	// 允许大小写字母 + 数字 + 下划线；长度区间从常量拼，免得规则与文案两处漂移。
+	playerNamePattern = regexp.MustCompile(fmt.Sprintf(
+		`^[A-Za-z0-9_]{%d,%d}$`, MinPlayerNameLength, MaxPlayerNameLength))
+	pngMagic = []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
 )
 
 // ValidationError 输入不合法（贴图不是可用的 MC 贴图 / 账号字段不符合 DESIGN.md 的约束）。
@@ -131,6 +144,9 @@ func NormalizeUUID(value string) (string, error) {
 	return cleaned, nil
 }
 
+// NormalizeUsername 账号名（登录用）：DESIGN.md 4.1 规定只允许小写字母 + 数字 + @ + .。
+//
+// 分两步报错是为了文案能说清是哪一条不合适（太长 / 有非法字符），空格属于后者。
 func NormalizeUsername(value string) (string, error) {
 	cleaned := strings.TrimSpace(value)
 	if cleaned == "" {
@@ -139,27 +155,28 @@ func NormalizeUsername(value string) (string, error) {
 	if len([]rune(cleaned)) > MaxUsernameLength {
 		return "", invalid("valid.username.long", MaxUsernameLength)
 	}
-	if strings.ContainsAny(cleaned, " \t\r\n\v\f") {
-		return "", invalid("valid.username.space")
+	if !usernamePattern.MatchString(cleaned) {
+		return "", invalid("valid.username.invalid")
 	}
 	return cleaned, nil
 }
 
-// NormalizePlayerName 游戏内角色名：DESIGN.md 规定只能是小写字母 + 数字 + 下划线，最长 16。
+// NormalizePlayerName 游戏内角色名：DESIGN.md 规定只允许大小写字母 + 数字 + 下划线，长度 3-16。
+//
+// 大小写**原样保留**（正版也是这样：显示按输入来，唯一性大小写不敏感 —— 后者在 db 层做，
+// 见 Store.uniqueConflictLocked），所以这里只 trim，不再 ToLower。
 func NormalizePlayerName(value string) (string, error) {
-	cleaned := strings.ToLower(strings.TrimSpace(value))
+	cleaned := strings.TrimSpace(value)
 	if !playerNamePattern.MatchString(cleaned) {
-		return "", invalid("valid.player_name")
+		return "", invalid("valid.player_name", MinPlayerNameLength, MaxPlayerNameLength)
 	}
 	return cleaned, nil
 }
 
 func NormalizeRole(value string) (string, error) {
 	cleaned := strings.ToLower(strings.TrimSpace(value))
-	for _, role := range Roles {
-		if cleaned == role {
-			return cleaned, nil
-		}
+	if slices.Contains(Roles, cleaned) {
+		return cleaned, nil
 	}
 	return "", invalid("valid.role", strings.Join(Roles, " / "))
 }
@@ -227,7 +244,7 @@ func cleanTags(tags []string) []string {
 func SplitQuery(query string) []string {
 	tokens := []string{}
 	seen := map[string]bool{}
-	for _, token := range strings.Fields(query) {
+	for token := range strings.FieldsSeq(query) {
 		key := strings.ToLower(token)
 		if key == "" || seen[key] {
 			continue

@@ -62,6 +62,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		Password   string  `json:"password"`
 		PlayerName string  `json:"player_name"`
 		Role       *string `json:"role"`
+		UUID       string  `json:"uuid"` // 可省略；留空则按离线规则从游戏内名称推导
 	}
 	if !decodeJSON(w, r, &payload) {
 		return
@@ -72,7 +73,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		role = *payload.Role
 	}
 
-	created, err := s.App.Store.CreateUser(payload.Username, payload.Password, payload.PlayerName, role)
+	created, err := s.App.Store.CreateUserWithUUID(payload.Username, payload.Password, payload.PlayerName, role, payload.UUID)
 	if err != nil {
 		writeUserError(w, r, err)
 		return

@@ -15,6 +15,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -117,9 +118,7 @@ type errorJSON struct {
 func (h *harness) authenticate(username, password string, extra map[string]any) authenticateJSON {
 	h.t.Helper()
 	payload := map[string]any{"username": username, "password": password}
-	for key, value := range extra {
-		payload[key] = value
-	}
+	maps.Copy(payload, extra)
 	recorder := h.do(http.MethodPost, "/api/yggdrasil/authserver/authenticate", payload, "")
 	if recorder.Code != http.StatusOK {
 		h.t.Fatalf("认证失败: %d %s", recorder.Code, recorder.Body.String())

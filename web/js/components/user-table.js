@@ -1,4 +1,4 @@
-/** 用户列表：一行一个账号，行尾是编辑 / 删除；自己被标出来且不能删。 */
+/** 用户列表：一行一个账号，行尾是编辑 / 删除；自己被标出来且不能删。末尾一行是新建入口。 */
 import { maintainStore } from "../maintain-store.js";
 
 export const UserTable = {
@@ -45,6 +45,15 @@ export const UserTable = {
             <td class="m-empty" colspan="5">{{ t("暂无账号") }}</td>
           </tr>
         </tbody>
+        <tfoot>
+          <tr>
+            <td class="m-add" colspan="5">
+              <button class="ghost-btn" type="button" @click="store.startCreate()">
+                <svg class="icon"><use href="#i-plus"/></svg>{{ t("新建用户") }}
+              </button>
+            </td>
+          </tr>
+        </tfoot>
       </table>
     </div>`,
 };

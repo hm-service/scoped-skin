@@ -41,33 +41,34 @@ var catalog = map[string]entry{
 	"request.too-big": {"请求体不能超过 1 MB", "Request body is over 1 MB"},
 
 	// ── 贴图 ───────────────────────────────────────────────────
-	"upload.missing":   {"缺少上传文件", "Missing uploaded file"},
-	"upload.too-big":   {"图片不能超过 32 KB", "Image is over 32 KB"},
-	"upload.base64":    {"图片数据不是合法的 base64", "Image data is not valid base64"},
-	"asset.unknown":    {"找不到该贴图", "Texture not found"},
-	"asset.cannot-del": {"只读资源不能删除", "Read-only textures cannot be deleted"},
-	"library.category": {"category 只能是 skin 或 cape", "category must be skin or cape"},
-	"library.tab":      {"tab 只能是 all 或 favorites", "tab must be all or favorites"},
-	"page.missing":     {"页面缺失", "Page is missing"},
+	"upload.missing":     {"缺少上传文件", "Missing uploaded file"},
+	"upload.too-big":     {"图片不能超过 32 KB", "Image is over 32 KB"},
+	"upload.base64":      {"图片数据不是合法的 base64", "Image data is not valid base64"},
+	"asset.unknown":      {"找不到该贴图", "Texture not found"},
+	"asset.cannot-del":   {"只读资源不能删除", "Read-only textures cannot be deleted"},
+	"library.category":   {"category 只能是 skin 或 cape", "category must be skin or cape"},
+	"library.query-long": {"搜索串最长 %d 个字符", "Search query is at most %d characters"},
+	"library.tab":        {"tab 只能是 all 或 favorites", "tab must be all or favorites"},
+	"page.missing":       {"页面缺失", "Page is missing"},
 
 	// ── 账号字段校验（core / db 抛的键） ─────────────────────────
-	"field.uuid":           {"UUID", "UUID"},
-	"field.username":       {"账号名", "Account name"},
-	"field.player_name":    {"游戏内名称", "Player name"},
-	"valid.uuid":           {"UUID 必须是 32 位十六进制字符", "UUID must be 32 hex characters"},
-	"valid.username.empty": {"账号名不能为空", "Account name is required"},
-	"valid.username.long":  {"账号名最长 %d 个字符", "Account name is at most %d characters"},
-	"valid.username.space": {"账号名不能包含空白字符", "Account name cannot contain spaces"},
-	"valid.player_name":    {"游戏内名称只能是小写字母、数字或下划线，长度 1-16", "Player name takes lowercase letters, digits and underscore, 1–16 characters"},
-	"valid.role":           {"身份组只能是 %s", "Role must be one of %s"},
-	"valid.password.empty": {"密码不能为空", "Password is required"},
-	"valid.password.short": {"密码至少 %d 个字符", "Password is at least %d characters"},
-	"valid.password.long":  {"密码最长 %d 个字符", "Password is at most %d characters"},
-	"valid.conflict":       {"%s「%s」已被占用", "%s “%s” is taken"},
-	"valid.readonly":       {"只读资源不能修改", "Read-only textures cannot be modified"},
-	"valid.last-admin":     {"这是最后一个管理员，不能降级", "The last admin cannot be demoted"},
-	"valid.tag-count":      {"标签最多 %d 个", "At most %d tags"},
-	"valid.tag-long":       {"单个标签最长 %d 个字符", "Each tag is at most %d characters"},
+	"field.uuid":             {"UUID", "UUID"},
+	"field.username":         {"账号名", "Account name"},
+	"field.player_name":      {"游戏内名称", "Player name"},
+	"valid.uuid":             {"UUID 必须是 32 位十六进制字符", "UUID must be 32 hex characters"},
+	"valid.username.empty":   {"账号名不能为空", "Account name is required"},
+	"valid.username.long":    {"账号名最长 %d 个字符", "Account name is at most %d characters"},
+	"valid.username.invalid": {"账号名只能是小写字母、数字、@ 和 .", "Account name takes lowercase letters, digits, @ and ."},
+	"valid.player_name":      {"游戏内名称只能是大小写字母、数字或下划线，长度 %d-%d", "Player name takes letters, digits and underscore, %d–%d characters"},
+	"valid.role":             {"身份组只能是 %s", "Role must be one of %s"},
+	"valid.password.empty":   {"密码不能为空", "Password is required"},
+	"valid.password.short":   {"密码至少 %d 个字符", "Password is at least %d characters"},
+	"valid.password.long":    {"密码最长 %d 个字符", "Password is at most %d characters"},
+	"valid.conflict":         {"%s「%s」已被占用", "%s “%s” is taken"},
+	"valid.readonly":         {"只读资源不能修改", "Read-only textures cannot be modified"},
+	"valid.last-admin":       {"这是最后一个管理员，不能降级", "The last admin cannot be demoted"},
+	"valid.tag-count":        {"标签最多 %d 个", "At most %d tags"},
+	"valid.tag-long":         {"单个标签最长 %d 个字符", "Each tag is at most %d characters"},
 
 	// ── 贴图校验 ───────────────────────────────────────────────
 	"valid.kind":     {"kind 只能是 %s", "kind must be one of %s"},
@@ -92,6 +93,7 @@ var catalog = map[string]entry{
 	"store.delete":       {"删除贴图失败", "Failed to delete texture"},
 	"store.equip":        {"装备贴图失败", "Failed to equip texture"},
 	"store.user-read":    {"读取用户列表失败", "Failed to read accounts"},
+	"store.users-read":   {"读取使用情况失败", "Failed to read who is wearing it"},
 	"store.user-write":   {"用户操作失败", "Account operation failed"},
 	"store.user-delete":  {"删除用户失败", "Failed to delete account"},
 	"store.token":        {"刷新令牌失败", "Failed to refresh tokens"},
@@ -100,7 +102,7 @@ var catalog = map[string]entry{
 // Parse 从 Accept-Language 里挑一档支持的语言：按出现顺序找第一个认得出来的，
 // 一个都不认得就用默认（也是源语言）。
 func Parse(header string) Lang {
-	for _, part := range strings.Split(header, ",") {
+	for part := range strings.SplitSeq(header, ",") {
 		tag := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
 		if tag == "" {
 			continue

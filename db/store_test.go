@@ -13,6 +13,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -173,8 +174,14 @@ func TestUserCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建号失败: %v", err)
 	}
-	if created.UUID != core.OfflineUUID("newbie") || created.Role != "normal" || created.Skin != "" {
+	// 游戏内名称大小写原样保留，离线 UUID 按存下来的名字推
+	if created.PlayerName != "Newbie" || created.UUID != core.OfflineUUID("Newbie") ||
+		created.Role != "normal" || created.Skin != "" {
 		t.Fatalf("新账号字段不对: %+v", created)
+	}
+	// 大小写不敏感的唯一性：Newbie 已存在，newbie 也要撞（建表那条 UNIQUE 是二进制比较，拦不住）
+	if _, err := store.CreateUser("newbie2", "hunter2x", "newbie", "normal"); err == nil {
+		t.Fatalf("只差大小写的重名账号不该建得出来")
 	}
 	// 唯一约束（改自己的 uuid 是空操作，不算冲突，所以拿别人的来撞）
 	for _, clash := range []map[string]string{
@@ -183,8 +190,7 @@ func TestUserCRUD(t *testing.T) {
 		{"uuid": store.UserByUsername("alex").UUID},
 	} {
 		_, err := store.UpdateUser(created.UUID, clash)
-		var conflict *core.ConflictError
-		if !errors.As(err, &conflict) {
+		if _, ok := errors.AsType[*core.ConflictError](err); !ok {
 			t.Fatalf("%v 应当撞唯一约束，实际 %v", clash, err)
 		}
 	}
@@ -417,6 +423,39 @@ func injectChunk(data []byte, kind string, payload []byte) []byte {
 	return out
 }
 
+// 创建时指定 uuid：空串仍按离线规则推导；指定的要归一化并校验。
+func TestCreateUserWithUUID(t *testing.T) {
+	t.Parallel()
+	store := openStore(t)
+
+	explicit := "0123456789abcdef0123456789abcdef"
+	user, err := store.CreateUserWithUUID("anchored@example.com", "hunter2x", "Anchored", "normal",
+		"01234567-89AB-CDEF-0123-456789ABCDEF")
+	if err != nil || user.UUID != explicit {
+		t.Fatalf("指定 uuid 没生效: %+v (%v)", user, err)
+	}
+	if user.PlayerName != "Anchored" {
+		t.Errorf("角色名 = %q，想要 Anchored", user.PlayerName)
+	}
+
+	derived, err := store.CreateUserWithUUID("derived@example.com", "hunter2x", "Derived2", "normal", "")
+	if err != nil || derived.UUID != core.OfflineUUID("Derived2") {
+		t.Fatalf("空 uuid 应当按角色名推导: %+v (%v)", derived, err)
+	}
+
+	for _, bad := range []string{"not-a-uuid", strings.Repeat("0", 31), strings.Repeat("g", 32)} {
+		if _, err := store.CreateUserWithUUID("bad@example.com", "hunter2x", "BadUuid", "normal", bad); err == nil {
+			t.Errorf("非法 uuid %q 不该通过", bad)
+		}
+	}
+
+	_, err = store.CreateUserWithUUID("clash@example.com", "hunter2x", "ClashUuid", "normal", explicit)
+	var conflict *core.ConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("uuid 撞车应当是冲突: %v", err)
+	}
+}
+
 func TestListFavoriteSearchEquipDelete(t *testing.T) {
 	t.Parallel()
 	store := openStore(t)
@@ -486,6 +525,29 @@ func TestListFavoriteSearchEquipDelete(t *testing.T) {
 		t.Fatalf("不存在的贴图应当回 nil")
 	}
 
+	// 删除前的「谁在穿这张」名单：steve 穿成皮肤；披风那条走另一列
+	cape, _, err := store.AddUpload("cape", []string{"自建披风"}, pngBytes(t, 64, 32))
+	if err != nil {
+		t.Fatalf("传披风失败: %v", err)
+	}
+	if status, err := store.Equip(cape.ID, alex.UUID); err != nil || status != "ok" {
+		t.Fatalf("给 alex 装备披风失败: %q (%v)", status, err)
+	}
+	wearers, err := store.AssetUsers(item.ID)
+	if err != nil || len(wearers) != 1 {
+		t.Fatalf("皮肤使用名单 = %+v (%v)", wearers, err)
+	}
+	if wearers[0].UUID != steve.UUID || wearers[0].PlayerName != "steve" || wearers[0].Slot != "skin" {
+		t.Fatalf("皮肤使用名单内容不对: %+v", wearers[0])
+	}
+	if capeWearers, _ := store.AssetUsers(cape.ID); len(capeWearers) != 1 ||
+		capeWearers[0].UUID != alex.UUID || capeWearers[0].Slot != "cape" {
+		t.Fatalf("披风使用名单不对: %+v", capeWearers)
+	}
+	if none, _ := store.AssetUsers("0000000000000000000000000000000000000000000000000000000000000000"); len(none) != 0 {
+		t.Fatalf("没人用的贴图应当回空名单: %+v", none)
+	}
+
 	// 只读的内置资源不能删
 	if status, _ := store.Delete(builtinItem(t, store).ID); status != "readonly" {
 		t.Fatalf("删内置资源 = %q", status)
@@ -503,6 +565,13 @@ func TestListFavoriteSearchEquipDelete(t *testing.T) {
 	}
 	if status, _ := store.Delete(item.ID); status != "missing" {
 		t.Fatalf("重复删除 = %q", status)
+	}
+	// 删干净之后名单也要空（引用已经跟着清掉了）
+	if wearers, _ := store.AssetUsers(item.ID); len(wearers) != 0 {
+		t.Fatalf("删掉后名单没清: %+v", wearers)
+	}
+	if capeWearers, _ := store.AssetUsers(cape.ID); len(capeWearers) != 1 {
+		t.Fatalf("删别的贴图不该动披风的使用者: %+v", capeWearers)
 	}
 }
 

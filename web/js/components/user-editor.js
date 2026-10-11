@@ -19,8 +19,8 @@ export const UserEditor = {
         <form class="m-form" @submit.prevent="store.saveEdit()">
           <label class="field">
             <span>{{ t("游戏内名称") }}</span>
-            <input v-model.trim="store.state.editing.player_name" type="text" maxlength="16"
-                   spellcheck="false" :placeholder="t('小写字母 / 数字 / 下划线')">
+            <input v-model.trim="store.state.editing.player_name" type="text" minlength="3" maxlength="16"
+                   spellcheck="false" :placeholder="t('大小写字母 / 数字 / 下划线，3-16 位')">
           </label>
           <label class="field">
             <span>{{ t("账号") }}</span>

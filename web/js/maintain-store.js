@@ -13,7 +13,23 @@ import { roleLabel } from "./roles.js";
 import { createToast } from "./toast.js";
 import { computed, reactive } from "./vue.js";
 
-const emptyDraft = () => ({ username: "", player_name: "", password: "", role: "normal" });
+const emptyDraft = () => ({ username: "", player_name: "", password: "", role: "normal", uuid: "" });
+
+/** 与 core 的规则保持一致：角色名 ^[A-Za-z0-9_]{3,16}$、UUID 32 位十六进制（可带横线）。
+ *  前端先拦一道只是为了不用等一次往返，真正的闸门仍在后端。 */
+const PLAYER_NAME_PATTERN = /^[A-Za-z0-9_]{3,16}$/;
+const USERNAME_PATTERN = /^[a-z0-9@.]+$/;
+const MAX_USERNAME_LENGTH = 32;
+const UUID_PATTERN = /^(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
+
+/** 校验一组账号字段；返回错误文案，通过则返回空串。 */
+function validateAccount({ username, player_name, uuid }) {
+  if ([...username].length > MAX_USERNAME_LENGTH) return t("账号名最长 32 个字符");
+  if (!USERNAME_PATTERN.test(username)) return t("账号名只能是小写字母、数字、@ 和 .");
+  if (!PLAYER_NAME_PATTERN.test(player_name)) return t("游戏内名称只能是大写字母、小写字母、数字或下划线，长度 3-16");
+  if (uuid && !UUID_PATTERN.test(uuid)) return t("UUID 必须是 32 位十六进制字符");
+  return "";
+}
 
 function createStore() {
   const state = reactive({
@@ -23,7 +39,8 @@ function createStore() {
     denied: false,
     creating: false,
     saving: false,
-    draft: emptyDraft(),
+    draft: emptyDraft(), // 新建表单的值
+    draftOpen: false, // 新建弹层开着没有（入口在账号列表末尾那一行）
     editing: null, // { uuid, username, player_name, role, password, original }
     toast: { message: "", kind: "info", visible: false },
   });
@@ -71,10 +88,29 @@ function createStore() {
 
   /* ── 新建 / 编辑 / 删除 ──────────────────────────────────────── */
 
+  /** 打开新建弹层：每次都从空表单开始，免得上次没提交的内容又冒出来。 */
+  function startCreate() {
+    state.draft = emptyDraft();
+    state.draftOpen = true;
+  }
+
+  function cancelCreate() {
+    state.draftOpen = false;
+  }
+
   async function create() {
     const draft = state.draft;
     if (!draft.username.trim() || !draft.player_name.trim() || !draft.password) {
       toastError(t("账号、游戏内名称、密码不能为空"));
+      return;
+    }
+    const invalid = validateAccount({
+      username: draft.username.trim(),
+      player_name: draft.player_name.trim(),
+      uuid: draft.uuid.trim(),
+    });
+    if (invalid) {
+      toastError(invalid);
       return;
     }
     state.creating = true;
@@ -87,10 +123,12 @@ function createStore() {
           player_name: draft.player_name.trim(),
           password: draft.password,
           role: draft.role,
+          uuid: draft.uuid.trim(), // 空串 = 让后端按离线规则推导
         }),
       });
       applySnapshot(payload);
       state.draft = emptyDraft();
+      state.draftOpen = false;
       toast(t("已创建「{name}」", { name: payload.user.player_name }));
     } catch (error) {
       fail(error);
@@ -119,6 +157,15 @@ function createStore() {
     if (!editing) return;
     if (!editing.username.trim() || !editing.player_name.trim()) {
       toastError(t("账号和游戏内名称都不能为空"));
+      return;
+    }
+    const invalid = validateAccount({
+      username: editing.username.trim(),
+      player_name: editing.player_name.trim(),
+      uuid: editing.uuid.trim(),
+    });
+    if (invalid) {
+      toastError(invalid);
       return;
     }
     const selfEdit = state.me?.uuid === editing.original.uuid;
@@ -180,6 +227,8 @@ function createStore() {
     isSelf,
     roleLabel,
     load,
+    startCreate,
+    cancelCreate,
     create,
     startEdit,
     cancelEdit,

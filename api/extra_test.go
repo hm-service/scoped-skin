@@ -186,3 +186,63 @@ func TestHandlersWithoutLanguageMiddleware(t *testing.T) {
 		t.Errorf("没有中间件时不该有 Content-Language，实际 %q", got)
 	}
 }
+
+// 「谁在穿这张贴图」：删除前给管理员看的名单（DESIGN.md 3.6）。
+func TestAssetUsersEndpoint(t *testing.T) {
+	instance, handler := newSite(t)
+	adminToken := testenv.Token(t, instance, "admin")
+	steveToken := testenv.Token(t, instance, "steve")
+	guestToken := testenv.Token(t, instance, "guest")
+
+	recorder := doUpload(t, handler, adminToken, [][2]string{{"kind", "skin.steve"}}, "skin.png", encodePNG(t, 64, 64))
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("上传状态码 = %d（%s）", recorder.Code, recorder.Body.String())
+	}
+	assetID, _ := testenv.Decode(t, recorder)["id"].(string)
+
+	// 没人用时是空名单，不是 404
+	recorder = testenv.Do(handler, http.MethodGet, "/api/items/"+assetID+"/users", nil, adminToken)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("查名单状态码 = %d（%s）", recorder.Code, recorder.Body.String())
+	}
+	if users, _ := testenv.Decode(t, recorder)["users"].([]any); len(users) != 0 {
+		t.Fatalf("还没人装备，名单该是空的: %v", users)
+	}
+
+	// steve 装备上之后，名单里应当有他，并且标出是 skin 那一列
+	if recorder := testenv.Do(handler, http.MethodPost, "/api/me/equip",
+		map[string]any{"asset_id": assetID}, steveToken); recorder.Code != http.StatusOK {
+		t.Fatalf("装备状态码 = %d（%s）", recorder.Code, recorder.Body.String())
+	}
+	recorder = testenv.Do(handler, http.MethodGet, "/api/items/"+assetID+"/users", nil, adminToken)
+	users, _ := testenv.Decode(t, recorder)["users"].([]any)
+	if len(users) != 1 {
+		t.Fatalf("名单 = %v，想要 1 条", users)
+	}
+	first, _ := users[0].(map[string]any)
+	if first["player_name"] != "steve" || first["slot"] != "skin" {
+		t.Errorf("名单内容 = %v，想要 steve / skin", first)
+	}
+
+	// 名单属于管理面：guest 与普通用户都看不到
+	for name, token := range map[string]string{"guest": guestToken, "steve": steveToken} {
+		recorder := testenv.Do(handler, http.MethodGet, "/api/items/"+assetID+"/users", nil, token)
+		if recorder.Code != http.StatusForbidden {
+			t.Errorf("%s 查名单 = %d，想要 403", name, recorder.Code)
+		}
+	}
+	// 不存在的贴图 → 404（与删除一致）
+	recorder = testenv.Do(handler, http.MethodGet,
+		"/api/items/"+strings.Repeat("0", 64)+"/users", nil, adminToken)
+	if recorder.Code != http.StatusNotFound {
+		t.Errorf("不存在的贴图 = %d，想要 404", recorder.Code)
+	}
+
+	// 真删了之后：使用者的装备被清空，名单也空了
+	if recorder := testenv.Do(handler, http.MethodDelete, "/api/items/"+assetID, nil, adminToken); recorder.Code != http.StatusOK {
+		t.Fatalf("删除状态码 = %d（%s）", recorder.Code, recorder.Body.String())
+	}
+	if skin, ok := testenv.Decode(t, testenv.Do(handler, http.MethodGet, "/api/me", nil, steveToken))["skin"]; ok && skin != nil {
+		t.Errorf("删掉后 steve 的皮肤该是 null，实际 %v", skin)
+	}
+}

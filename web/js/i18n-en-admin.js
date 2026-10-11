@@ -34,10 +34,15 @@ export const admin = {
 
   // ── 维护页：新建用户 ────────────────────────────────────────────
   "新建用户": "New account",
-  "UUID 从游戏内名称推导，建好后可改": "UUID derived from player name, editable later",
   "游戏内名称": "Player name",
-  "小写字母 / 数字 / 下划线": "Lowercase letters / digits / underscores",
-  "登录名": "Login name",
+  "大小写字母 / 数字 / 下划线，3-16 位": "Letters / digits / underscores, 3–16 chars",
+  "游戏内名称只能是大写字母、小写字母、数字或下划线，长度 3-16": "Player name takes letters, digits and underscore, 3–16 characters",
+  "UUID 必须是 32 位十六进制字符": "UUID must be 32 hex characters",
+  "留空则由游戏内名称推导": "Empty derives it from the player name",
+  "32 位十六进制，可带横线；建好后也能改": "32 hex characters, dashes allowed; editable later",
+  "小写字母 / 数字 / @ / .": "Lowercase letters / digits / @ / .",
+  "账号名最长 32 个字符": "Account name is at most 32 characters",
+  "账号名只能是小写字母、数字、@ 和 .": "Account name takes lowercase letters, digits, @ and .",
   "登录密码": "Login password",
   "身份组": "Role",
   "游客": "Guest",

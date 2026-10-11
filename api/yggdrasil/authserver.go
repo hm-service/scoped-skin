@@ -55,6 +55,10 @@ func (s *Server) handleAuthenticate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if tooLong(payload.ClientToken) {
+		badRequest(w, "Invalid clientToken")
+		return
+	}
 	user := s.App.VerifyCredentials(payload.Username, payload.Password)
 	if user == nil {
 		forbidden(w, errInvalidCredentials)
@@ -84,6 +88,10 @@ func (s *Server) handleAuthenticate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	payload, ok := decode[refreshRequest](w, r)
 	if !ok {
+		return
+	}
+	if tooLong(payload.AccessToken, payload.ClientToken) {
+		forbidden(w, errInvalidToken)
 		return
 	}
 	session, ok := s.App.Sessions.Get(payload.AccessToken)
@@ -127,6 +135,10 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	payload, ok := decode[tokenRequest](w, r)
 	if !ok {
+		return
+	}
+	if tooLong(payload.AccessToken, payload.ClientToken) {
+		forbidden(w, errInvalidToken)
 		return
 	}
 	session, ok := s.App.Sessions.Get(payload.AccessToken)

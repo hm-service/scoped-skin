@@ -44,12 +44,10 @@ func unauthorized(w http.ResponseWriter, r *http.Request, key string, args ...an
 // businessMessage 把 core / db 抛的带键错误渲染成当前语言的文案；不是这两种错误就返回空串。
 func businessMessage(r *http.Request, err error) string {
 	lang := language(r)
-	var conflict *core.ConflictError
-	if errors.As(err, &conflict) {
+	if conflict, ok := errors.AsType[*core.ConflictError](err); ok {
 		return i18n.T(lang, conflict.Key, conflict.Args...)
 	}
-	var invalid *core.ValidationError
-	if errors.As(err, &invalid) {
+	if invalid, ok := errors.AsType[*core.ValidationError](err); ok {
 		return i18n.T(lang, invalid.Key, invalid.Args...)
 	}
 	return ""

@@ -1,23 +1,21 @@
-.git/
-.github/
-.prototype/
-docs/
-shots/
-
-# 运行时数据（容器里由 VOLUME 提供）
-data/
-data_sample/
+# 编译产物
+/scoped-skin
+*.test
 
 # Go 缓存（本机 module cache 只读，缓存落在仓库里）
 .go-mod-cache/
 .go-build/
 
+# 运行时数据（贴图库 + 索引 + 审计日志 + RSA 密钥），首次启动会自动重建
+data/
+data_sample/
+
 # 参考项目（本地 clone，不纳入本仓库）
 ref/
 blessing-skin-server/
 
-# 编译产物
-scoped-skin
+# 验证截图
+shots/
 
-# Dockerfile 里的产物名（本地手跑同名构建时会落在上下文里）
-app.bin
+# Python 原型（已归档：Go 版重写前的实现，只作参考，不再维护）
+.prototype/

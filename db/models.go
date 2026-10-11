@@ -11,6 +11,16 @@ type User struct {
 	Cape         string `json:"cape"`
 }
 
+// AssetUser 是「谁在穿这张贴图」的一条记录（删除前提示用）。
+//
+// Slot 只会是 skin / cape：贴图本身有 kind，装备接口也只让同一类进对应的列，
+// 所以一张贴图在同一行里占不了两格。
+type AssetUser struct {
+	UUID       string `json:"uuid"`
+	PlayerName string `json:"player_name"`
+	Slot       string `json:"slot"`
+}
+
 // Item 是一条贴图资源，字段与 DESIGN.md 3.6 的「贴图条目」一致。
 //
 // Kind 是库里那一列（skin.steve / skin.alex / cape，已含模型）；Category 是由它推出的

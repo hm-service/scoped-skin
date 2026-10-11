@@ -22,7 +22,7 @@ func captureLog(t *testing.T) func() []map[string]any {
 
 	return func() []map[string]any {
 		records := []map[string]any{}
-		for _, line := range strings.Split(strings.TrimSpace(buffer.String()), "\n") {
+		for line := range strings.SplitSeq(strings.TrimSpace(buffer.String()), "\n") {
 			if line == "" {
 				continue
 			}

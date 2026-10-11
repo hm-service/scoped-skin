@@ -98,7 +98,7 @@ function createStore() {
     player: getUser(),
     skin: null, // 当前预览的皮肤条目
     cape: null, // 当前预览的披风条目
-    backEquipment: null, // 背面显示哪一档：cape | elytra | null（隐藏）
+    backEquipment: "cape", // 背面显示哪一档：cape | elytra | null（隐藏）。默认「有披风就显示」
     equipped: { skin: null, cape: null }, // /api/me 回传的当前装备
     library: [], // 已有标签：[{ tag, count }]
     selectedTags: [], // 上传表单选中的标签
@@ -284,10 +284,7 @@ function createStore() {
     state.player = me.player;
     state.equipped = { skin: me.skin, cape: me.cape };
     setToken(getToken(), me.player); // 顺手把用户信息写回 localStorage
-    if (me.cape) {
-      state.cape = me.cape;
-      state.backEquipment = "cape";
-    }
+    if (me.cape) state.cape = me.cape;
   }
 
   async function refresh() {
@@ -334,7 +331,8 @@ function createStore() {
       state.skin = item;
     } else {
       state.cape = item;
-      state.backEquipment = "cape";
+      // 换披风只换贴图，不动「披风 / 鞘翅 / 隐藏」这一档：那是用户按出来的显示选择，
+      // 挑一张新披风就把它冲掉会很难用（鞘翅用的也是这张贴图，切完贴图它还得在）。
       // guest 是只读身份组：只能预览，不用提示「已穿上」
       if (canWrite.value) {
         toast(t("已穿上「{name}」", { name: item.tags?.length ? item.tags.join(" · ") : shortId(item) }));
@@ -362,7 +360,21 @@ function createStore() {
       toastError(t("只有管理员能删除资源"));
       return false;
     }
-    if (!confirm(t("删除这个{noun}？", { noun: item.category === "skin" ? t("皮肤") : t("披风") }))) return false;
+    // 先问后端「谁在穿它」：有人用就把名字列出来（删除会让他们变成未装备，得让管理员知道）
+    let wearers = [];
+    try {
+      wearers = (await api(`/api/items/${item.id}/users`)).users ?? [];
+    } catch {
+      // 读不到名单不该挡删除：退回普通确认
+    }
+    const noun = item.category === "skin" ? t("皮肤") : t("披风");
+    const prompt = wearers.length
+      ? t("有 {count} 个账号正在使用：{names}。删除后这些账号会取消装备，确定删除？", {
+          count: wearers.length,
+          names: wearers.map((user) => user.player_name).join("、"),
+        })
+      : t("删除这个{noun}？", { noun });
+    if (!confirm(prompt)) return false;
     try {
       const payload = await api(`/api/items/${item.id}`, { method: "DELETE" });
       forgetThumbnail(item.id);
@@ -374,7 +386,7 @@ function createStore() {
       if (payload.stats) state.stats = payload.stats;
       await refresh();
       await loadTags();
-      toast(t("已删除"));
+      toast(wearers.length ? t("已删除（{count} 个账号已取消装备）", { count: wearers.length }) : t("已删除"));
       return true;
     } catch (error) {
       toastError(error.message);

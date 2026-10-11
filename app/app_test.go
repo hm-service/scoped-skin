@@ -48,9 +48,13 @@ func TestFirstStartCreatesSingleAdmin(t *testing.T) {
 	if err != nil || len(users) != 1 {
 		t.Fatalf("首次启动应当只有 1 个账号，实际 %d (%v)", len(users), err)
 	}
+	// ADMIN_USERNAME 只决定登录名；角色名固定 admin（DESIGN.md 1.1）
 	admin := users[0]
-	if admin.Username != "root" || admin.Role != "admin" || admin.PlayerName != "root" {
+	if admin.Username != "root" || admin.Role != "admin" || admin.PlayerName != "admin" {
 		t.Fatalf("管理员账号不对: %+v", admin)
+	}
+	if admin.UUID != core.OfflineUUID("admin") {
+		t.Errorf("首建管理员的 UUID 应当按角色名 admin 推导，实际 %s", admin.UUID)
 	}
 	if instance.Store.Authenticate("root", "s3cret-password") == nil {
 		t.Fatalf("ADMIN_PASSWORD 没生效")
@@ -76,7 +80,7 @@ func TestFirstStartGeneratesPasswordWhenUnset(t *testing.T) {
 	}
 
 	var password string
-	for _, line := range strings.Split(strings.TrimSpace(buffer.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(buffer.String()), "\n") {
 		var record map[string]any
 		if err := json.Unmarshal([]byte(line), &record); err != nil {
 			continue
@@ -158,11 +162,9 @@ func TestVerifyCredentialsUnderConcurrency(t *testing.T) {
 	var group sync.WaitGroup
 	results := make([]bool, 8)
 	for index := range results {
-		group.Add(1)
-		go func() {
-			defer group.Done()
+		group.Go(func() {
 			results[index] = instance.VerifyCredentials("admin", "password-1234") != nil
-		}()
+		})
 	}
 	group.Wait()
 	for index, ok := range results {

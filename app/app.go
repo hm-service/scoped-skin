@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -101,10 +100,7 @@ func Open(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("initialize token table: %w", err)
 	}
 
-	concurrency := ArgonConcurrency
-	if concurrency < 1 {
-		concurrency = 1
-	}
+	concurrency := max(ArgonConcurrency, 1)
 	instance := &App{
 		Config:   cfg,
 		Store:    store,
@@ -151,7 +147,9 @@ func ensureAdmin(store *db.Store, username, password string) error {
 			return err
 		}
 	}
-	if _, err := store.CreateUser(username, password, playerNameFor(username), "admin"); err != nil {
+	// 角色名固定 admin：这条路径上唯一的输入是 ADMIN_USERNAME（往往是个邮箱），
+	// 拿它派生角色名只会得到 "adminexamplecom" 这类东西；反正管理员进去就能在 /maintain 改。
+	if _, err := store.CreateUser(username, password, DefaultAdminUsername, "admin"); err != nil {
 		return err
 	}
 	if generated {
@@ -161,23 +159,6 @@ func ensureAdmin(store *db.Store, username, password string) error {
 		slog.Info("first start: created admin account from ADMIN_PASSWORD", slog.String("username", username))
 	}
 	return nil
-}
-
-// playerNameFor 把账号名压成合法的游戏内名称（小写字母 + 数字 + 下划线，最长 16）。
-func playerNameFor(username string) string {
-	var name strings.Builder
-	for _, char := range strings.ToLower(strings.TrimSpace(username)) {
-		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '_' {
-			name.WriteRune(char)
-		}
-		if name.Len() >= 16 {
-			break
-		}
-	}
-	if name.Len() == 0 {
-		return DefaultAdminUsername
-	}
-	return name.String()
 }
 
 // Close 关闭数据库。

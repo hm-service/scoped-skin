@@ -33,11 +33,9 @@ func TestConcurrencyCapsInFlightRequests(t *testing.T) {
 	total := api.MaxConcurrentRequests + 32
 	var group sync.WaitGroup
 	for range total {
-		group.Add(1)
-		go func() {
-			defer group.Done()
+		group.Go(func() {
 			handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/library", nil))
-		}()
+		})
 	}
 	group.Wait()
 

@@ -78,6 +78,14 @@ func (s *Store) AdminCount() int {
 
 // CreateUser 新建账号；uuid 按离线模式规则从游戏内名称推导（管理员可再改）。
 func (s *Store) CreateUser(username, password, playerName, role string) (*User, error) {
+	return s.CreateUserWithUUID(username, password, playerName, role, "")
+}
+
+// CreateUserWithUUID 新建账号。uuid 传空串 = 按离线模式规则从游戏内名称推导；
+// 传了就用它 —— 例如对齐正版账号、或接上某个世界里已经存在的玩家数据。
+//
+// 格式在这里再校验一遍：这条路径不该假定调用方已经过了 HTTP 层的 NormalizeUUID。
+func (s *Store) CreateUserWithUUID(username, password, playerName, role, uuid string) (*User, error) {
 	name, err := core.NormalizePlayerName(playerName)
 	if err != nil {
 		return nil, err
@@ -99,9 +107,15 @@ func (s *Store) CreateUser(username, password, playerName, role string) (*User, 
 		return nil, err
 	}
 
+	playerUUID := core.OfflineUUID(name)
+	if uuid != "" {
+		if playerUUID, err = core.NormalizeUUID(uuid); err != nil {
+			return nil, err
+		}
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	playerUUID := core.OfflineUUID(name)
 	err = s.uniqueConflictLocked(map[string]string{
 		"uuid": playerUUID, "player_name": name, "username": login,
 	}, "")
@@ -303,6 +317,11 @@ func (s *Store) uniqueConflictLocked(fields map[string]string, excludeUUID strin
 			continue
 		}
 		query := "SELECT uuid FROM user WHERE " + column + " = ?"
+		if column == "player_name" {
+			// 名字大小写原样保存，但唯一性大小写不敏感（正版也是「Steve 与 steve 算同一个」）。
+			// 建表那条 UNIQUE 索引是二进制比较，不认大小写，所以这一层预检才是闸门。
+			query += " COLLATE NOCASE"
+		}
 		args := []any{value}
 		if excludeUUID != "" {
 			query += " AND uuid <> ?"

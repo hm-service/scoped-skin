@@ -104,6 +104,12 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := formValue(query, "q", "")
+	// 搜索串本身不落库、也不回显，这里只防「一个超长 q 拼出几万条 LIKE」——
+	// 长度按 core.MaxQueryLength（标签数量 × 单条长度）算，正常用永远碰不到。
+	if len([]rune(q)) > core.MaxQueryLength {
+		fail(w, r, http.StatusBadRequest, "library.query-long", core.MaxQueryLength)
+		return
+	}
 
 	items, err := s.App.Store.List(category, tab, q, user.UUID)
 	if err != nil {
@@ -192,8 +198,7 @@ func (s *Server) handleUploadSkin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseMultipartForm(uploadMemoryBytes); err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			fail(w, r, http.StatusBadRequest, "request.too-big")
 			return
 		}
@@ -268,7 +273,35 @@ func (s *Server) handleFavorite(w http.ResponseWriter, r *http.Request) {
 	httpx.Write(w, http.StatusOK, itemWithStats{Item: *item, Stats: stats})
 }
 
+// handleAssetUsers 列出正在穿这张贴图的账号：删除前给管理员看的（DESIGN.md 3.6）。
+//
+// 只给 admin：这份名单是「谁装备了什么」，和 /api/admin/users 一样属于管理面。
+func (s *Server) handleAssetUsers(w http.ResponseWriter, r *http.Request) {
+	if s.currentAdmin(w, r) == nil {
+		return
+	}
+	assetID := r.PathValue("asset_id")
+	if item, err := s.App.Store.Item(assetID, ""); err != nil {
+		fail(w, r, http.StatusInternalServerError, "store.texture-read")
+		return
+	} else if item == nil {
+		fail(w, r, http.StatusNotFound, "asset.unknown")
+		return
+	}
+	users, err := s.App.Store.AssetUsers(assetID)
+	if err != nil {
+		fail(w, r, http.StatusInternalServerError, "store.users-read")
+		return
+	}
+	httpx.Write(w, http.StatusOK, struct {
+		Users []db.AssetUser `json:"users"`
+	}{Users: users})
+}
+
 // handleDeleteItem 删除贴图：DESIGN.md 5.1 里「删除资源」只给 admin。
+//
+// 删除本身会把使用者的 skin / cape 清空（db.dropAssetLocked），这里不做拦截 ——
+// 「有谁在用」由 GET /api/items/{asset_id}/users 提前告诉前端，让管理员自己决定。
 func (s *Server) handleDeleteItem(w http.ResponseWriter, r *http.Request) {
 	admin := s.currentAdmin(w, r)
 	if admin == nil {

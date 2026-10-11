@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS user (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     uuid          TEXT NOT NULL UNIQUE,   -- 用户 UUID，32 位无横线小写
     role          TEXT NOT NULL,          -- 身份组：admin / normal / guest
-    player_name   TEXT NOT NULL UNIQUE,   -- 游戏内角色名，小写字母 + 数字 + 下划线
+    player_name   TEXT NOT NULL UNIQUE,   -- 游戏内角色名，大小写字母 + 数字 + 下划线，3-16 位
     username      TEXT NOT NULL UNIQUE,   -- 账号登录名
     password_hash TEXT NOT NULL UNIQUE,   -- 账号登录密码的 Argon2id 哈希串
     skin          TEXT NOT NULL,          -- 空串表示未装备

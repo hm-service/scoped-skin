@@ -131,14 +131,36 @@ func TestNormalizeUserFields(t *testing.T) {
 	if _, err := core.NormalizeUsername(strings.Repeat("a", core.MaxUsernameLength+1)); err == nil {
 		t.Fatalf("超长账号名不该通过")
 	}
-	if _, err := core.NormalizeUsername("ste ve"); err == nil {
-		t.Fatalf("账号名里的空白不该通过")
+	// 账号名只收小写字母 + 数字 + @ + .（邮箱形状够用）
+	// 规则是「字符集」而不是邮箱语法：@ 与 . 可以出现在任何位置，下划线不在集合里
+	for _, bad := range []string{"ste ve", "Steve", "steve!", "中文", "steve_bot", "a/b"} {
+		if _, err := core.NormalizeUsername(bad); err == nil {
+			t.Errorf("账号名 %q 不该通过", bad)
+		}
+	}
+	for _, good := range []string{"steve", "steve.bot", "a.b@c.d", "user123@example.com", "@"} {
+		if _, err := core.NormalizeUsername(good); err != nil {
+			t.Errorf("账号名 %q 应当通过: %v", good, err)
+		}
 	}
 
-	if got, err := core.NormalizePlayerName("  Steve_01 "); err != nil || got != "steve_01" {
-		t.Fatalf("NormalizePlayerName = %q, %v", got, err)
+	// 大小写原样保留（正版也是显示按输入、唯一性不敏感）
+	for input, want := range map[string]string{
+		"  Steve_01 ": "Steve_01",
+		"steve_01":    "steve_01",
+		"STEVE_01":    "STEVE_01",
+		"abc":         "abc", // 下限 3
+		strings.Repeat("a", core.MaxPlayerNameLength): strings.Repeat("a", core.MaxPlayerNameLength),
+	} {
+		if got, err := core.NormalizePlayerName(input); err != nil || got != want {
+			t.Fatalf("NormalizePlayerName(%q) = %q, %v（想要 %q）", input, got, err, want)
+		}
 	}
-	for _, bad := range []string{"", "Steve!", "中文", "a2345678901234567"} {
+	for _, bad := range []string{
+		"", "ab", // 短于下限
+		"Steve!", "中文", "ste ve", // 字符集
+		strings.Repeat("a", core.MaxPlayerNameLength+1), // 超上限
+	} {
 		if _, err := core.NormalizePlayerName(bad); err == nil {
 			t.Fatalf("角色名 %q 不该通过", bad)
 		}

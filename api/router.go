@@ -77,6 +77,7 @@ func NewMux(instance *app.App) *http.ServeMux {
 		{http.MethodPost, "/api/precheck", server.handlePrecheck},
 		{http.MethodPost, "/api/skins", server.handleUploadSkin},
 		{http.MethodPost, "/api/items/{asset_id}/favorite", server.handleFavorite},
+		{http.MethodGet, "/api/items/{asset_id}/users", server.handleAssetUsers},
 		{http.MethodDelete, "/api/items/{asset_id}", server.handleDeleteItem},
 		{http.MethodGet, "/api/me", server.handleMe},
 		{http.MethodPost, "/api/me/equip", server.handleEquip},

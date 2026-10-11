@@ -67,13 +67,30 @@ func internalError(w http.ResponseWriter, err error) {
 	sendError(w, http.StatusInternalServerError, "Internal Server Error", "")
 }
 
+// maxCredentialLength 是 accessToken / clientToken / serverId 这类字符串的长度上限。
+//
+// 我们自己的令牌是 32 位十六进制、正版客户端的 clientToken 是 UUID 形状，128 已经很宽松；
+// 没有上限的话，1 MiB 的请求体里塞一个超长 token 就会被原样存进内存会话表
+// （每个账号 8 条），serverId 同理进 Joins 表。
+const maxCredentialLength = 128
+
+// tooLong 报告这组凭据/暗号里有没有超出上限的。空串不算 —— 那些由各自的 handler
+// 按规范单独处理（例如 clientToken 为空表示由服务端生成）。
+func tooLong(values ...string) bool {
+	for _, value := range values {
+		if len(value) > maxCredentialLength {
+			return true
+		}
+	}
+	return false
+}
+
 // decode 解析 JSON 请求体；失败时自己回 400 并返回 false。
 func decode[T any](w http.ResponseWriter, r *http.Request) (T, bool) {
 	var payload T
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&payload); err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			badRequest(w, "Request body too large")
 		} else {
 			badRequest(w, "Malformed JSON body")

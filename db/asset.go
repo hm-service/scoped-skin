@@ -296,6 +296,33 @@ func (s *Store) AddUpload(kind string, tags []string, data []byte) (Item, string
 }
 
 // Delete 删除贴图。返回 "deleted" / "readonly" / "missing"。
+// AssetUsers 列出正在穿这张贴图的账号（删除前的提示用）。
+//
+// 找不到贴图不是错误：返回空列表，由调用方决定要不要 404 —— 删除流程里它只是「提示」
+// 这一步，真正的闸门是 Delete 自己。
+func (s *Store) AssetUsers(assetID string) ([]AssetUser, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(
+		"SELECT uuid, player_name, CASE WHEN skin = ? THEN 'skin' ELSE 'cape' END"+
+			" FROM user WHERE skin = ? OR cape = ?"+
+			" ORDER BY player_name COLLATE NOCASE, uuid", assetID, assetID, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	users := []AssetUser{}
+	for rows.Next() {
+		var user AssetUser
+		if err := rows.Scan(&user.UUID, &user.PlayerName, &user.Slot); err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	return users, rows.Err()
+}
+
+// Delete 删除贴图；dropAssetLocked 会把使用者的 skin / cape 清空（见那里的注释）。
 func (s *Store) Delete(assetID string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -368,6 +395,12 @@ func (s *Store) statsLocked(playerUUID string) (Stats, error) {
 }
 
 // dropAssetLocked 删掉一条资源，并清掉引用它的收藏与装备状态（无外键，靠代码保证）。
+// dropAssetLocked 删贴图，并把它留下的引用一起清掉。
+//
+// 收藏与「装备」都是按 asset_id 存的、没有外键，所以必须在这里跟着走：不清理的话，
+// 使用者的 user.skin / user.cape 会指向一条不存在的记录，/api/me 拿不到图、
+// 前端 3D 面板只会报「皮肤贴图加载失败」。清空之后他们就是「未装备」状态，
+// 下次登录 / 刷新自然恢复（已经打开着的页面要自己刷新，这里没有推送）。
 func (s *Store) dropAssetLocked(assetID string) error {
 	for _, statement := range []string{
 		"DELETE FROM asset WHERE asset_id = ?",

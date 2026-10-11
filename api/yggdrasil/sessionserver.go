@@ -24,6 +24,10 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if tooLong(payload.AccessToken, payload.ServerID) {
+		forbidden(w, errInvalidToken)
+		return
+	}
 	session, ok := s.App.Sessions.Get(payload.AccessToken)
 	if !ok ||
 		core.DashlessUUID(session.PlayerUUID) != core.DashlessUUID(payload.SelectedProfile) {
@@ -43,6 +47,11 @@ func (s *Server) handleHasJoined(w http.ResponseWriter, r *http.Request) {
 	serverID := query.Get("serverId")
 	if username == "" || serverID == "" {
 		badRequest(w, "Missing username or serverId")
+		return
+	}
+	// 超长（或根本不像暗号）的查询直接当成「没有这条进服记录」：规范要求核对不上也回 204。
+	if tooLong(username) || len([]rune(username)) > core.MaxPlayerNameLength || tooLong(serverID) {
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	user := s.App.Store.UserByPlayerName(username)

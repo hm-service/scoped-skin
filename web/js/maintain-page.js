@@ -7,6 +7,7 @@
 import { requireAuth } from "./auth.js";
 import { LocaleSwitch } from "./components/locale-switch.js";
 import { ToastBox } from "./components/toast-box.js";
+import { UserCreate } from "./components/user-create.js";
 import { UserEditor } from "./components/user-editor.js";
 import { UserTable } from "./components/user-table.js";
 import { installI18n, t } from "./i18n.js";
@@ -15,7 +16,7 @@ import { createApp, onMounted } from "./vue.js";
 
 const MaintainPage = {
   name: "MaintainPage",
-  components: { LocaleSwitch, ToastBox, UserEditor, UserTable },
+  components: { LocaleSwitch, ToastBox, UserCreate, UserEditor, UserTable },
   setup() {
     onMounted(() => maintainStore.load());
     return { store: maintainStore };
@@ -55,44 +56,6 @@ const MaintainPage = {
           <template v-else>
             <section class="m-card">
               <header class="m-card-head">
-                <h2><svg class="icon"><use href="#i-users"/></svg>{{ t("新建用户") }}</h2>
-                <span class="m-sub">{{ t("UUID 从游戏内名称推导，建好后可改") }}</span>
-              </header>
-              <form class="m-grid" @submit.prevent="store.create()">
-                <label class="field">
-                  <span>{{ t("游戏内名称") }}</span>
-                  <input v-model.trim="store.state.draft.player_name" type="text" maxlength="16"
-                         spellcheck="false" :placeholder="t('小写字母 / 数字 / 下划线')" required>
-                </label>
-                <label class="field">
-                  <span>{{ t("账号") }}</span>
-                  <input v-model.trim="store.state.draft.username" type="text" maxlength="32"
-                         spellcheck="false" autocomplete="off" :placeholder="t('登录名')" required>
-                </label>
-                <label class="field">
-                  <span>{{ t("密码") }}</span>
-                  <input v-model="store.state.draft.password" type="password"
-                         autocomplete="new-password" :placeholder="t('登录密码')" required>
-                </label>
-                <label class="field">
-                  <span>{{ t("身份组") }}</span>
-                  <select v-model="store.state.draft.role">
-                    <option value="guest">{{ t("游客") }}</option>
-                    <option value="normal">{{ t("普通") }}</option>
-                    <option value="admin">{{ t("管理员") }}</option>
-                  </select>
-                </label>
-                <div class="form-actions m-grid-actions">
-                  <button type="submit" class="primary-btn" :disabled="store.state.creating">
-                    <svg class="icon"><use href="#i-plus"/></svg>
-                    {{ store.state.creating ? t('创建中…') : t('创建用户') }}
-                  </button>
-                </div>
-              </form>
-            </section>
-
-            <section class="m-card">
-              <header class="m-card-head">
                 <h2><svg class="icon"><use href="#i-users"/></svg>{{ t("账号") }}</h2>
                 <span class="m-sub" v-if="store.state.loading">{{ t("载入中…") }}</span>
                 <span class="m-sub" v-else>{{ t("{count} 个", { count: store.state.users.length }) }}</span>
@@ -103,6 +66,7 @@ const MaintainPage = {
         </div>
       </main>
 
+      <UserCreate/>
       <UserEditor/>
       <ToastBox :toast="store.state.toast"/>
     </div>`,

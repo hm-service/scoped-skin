@@ -308,3 +308,51 @@ func TestMetadataSkinDomainsWithPortOnlyHost(t *testing.T) {
 		}
 	}
 }
+
+// 凭据与暗号的长度上限：超出 128 的一律当成无效，不进内存表 ——
+// 否则 1 MiB 请求体里的超长 clientToken / serverId 会被原样存下来。
+func TestCredentialLengthCaps(t *testing.T) {
+	h := newHarness(t)
+	long := strings.Repeat("x", 129)
+
+	// authenticate：clientToken 超长 → 400（形态不对，不是「凭据错」）
+	recorder := h.do(http.MethodPost, "/api/yggdrasil/authserver/authenticate",
+		map[string]any{"username": "steve", "password": "steve123", "clientToken": long}, "")
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("超长 clientToken = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
+	}
+
+	session := h.authenticate("steve", "steve123", nil)
+
+	// refresh / validate：accessToken 超长 → 403 Invalid token
+	for _, endpoint := range []string{"/api/yggdrasil/authserver/refresh", "/api/yggdrasil/authserver/validate"} {
+		recorder := h.do(http.MethodPost, endpoint,
+			map[string]any{"accessToken": long, "clientToken": long}, "")
+		if recorder.Code != http.StatusForbidden {
+			t.Errorf("%s 超长 token = %d，想要 403（%s）", endpoint, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	// join：serverId 超长 → 403
+	recorder = h.do(http.MethodPost, "/api/yggdrasil/sessionserver/session/minecraft/join",
+		map[string]any{"accessToken": session.AccessToken, "selectedProfile": core.OfflineUUID("steve"), "serverId": long}, "")
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("超长 serverId = %d，想要 403（%s）", recorder.Code, recorder.Body.String())
+	}
+
+	// hasJoined：超长的 username / serverId 直接当成「没有这条进服记录」→ 204
+	for _, query := range []string{"username=" + long + "&serverId=s1", "username=steve&serverId=" + long} {
+		recorder := h.do(http.MethodGet,
+			"/api/yggdrasil/sessionserver/session/minecraft/hasJoined?"+query, nil, "")
+		if recorder.Code != http.StatusNoContent {
+			t.Errorf("hasJoined %q = %d，想要 204", query, recorder.Code)
+		}
+	}
+
+	// 边界内（正好 128）仍然按正常路径走：clientToken 原样回显
+	edge := strings.Repeat("y", 128)
+	got := h.authenticate("steve", "steve123", map[string]any{"clientToken": edge})
+	if got.ClientToken != edge {
+		t.Errorf("128 字符的 clientToken 应当被接受，实际 %q", got.ClientToken)
+	}
+}

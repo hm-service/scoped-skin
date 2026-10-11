@@ -116,6 +116,8 @@ export const app = {
   "自动旋转": "Auto-rotate",
   "重置视角": "Reset view",
   "拖拽旋转 · 滚轮缩放 · 中键平移": "Drag to rotate · scroll to zoom · middle-drag to pan",
+  "有 {count} 个账号正在使用：{names}。删除后这些账号会取消装备，确定删除？": "In use by {count} accounts: {names}. They will be unequipped. Delete anyway?",
+  "已删除（{count} 个账号已取消装备）": "Deleted · {count} accounts unequipped",
   "选一张皮肤开始预览": "Pick a skin to preview",
   "显示 / 隐藏皮肤": "Show / hide skin",
   "显示 / 隐藏外层": "Show / hide overlay",

@@ -41,10 +41,10 @@ func TestNormalizeTextureIsFixedPoint(t *testing.T) {
 
 // 上限按**字符**算而不是字节：多字节字符正好到上限要能过，多一个字符才被拒。
 func TestFieldLimitsCountRunesNotBytes(t *testing.T) {
-	if _, err := core.NormalizeUsername(strings.Repeat("汉", core.MaxUsernameLength)); err != nil {
+	if _, err := core.NormalizeUsername(strings.Repeat("a", core.MaxUsernameLength)); err != nil {
 		t.Errorf("%d 个字符的账号名应当通过: %v", core.MaxUsernameLength, err)
 	}
-	if _, err := core.NormalizeUsername(strings.Repeat("汉", core.MaxUsernameLength+1)); err == nil {
+	if _, err := core.NormalizeUsername(strings.Repeat("a", core.MaxUsernameLength+1)); err == nil {
 		t.Errorf("%d 个字符的账号名应当被拒", core.MaxUsernameLength+1)
 	}
 	if _, err := core.NormalizePassword(strings.Repeat("密", core.MaxPasswordLength)); err != nil {
