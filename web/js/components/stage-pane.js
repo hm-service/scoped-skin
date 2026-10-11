@@ -35,6 +35,7 @@ export const StagePane = {
     });
 
     onBeforeUnmount(() => {
+      viewerRef.current?.dispose();
       viewerRef.current = null;
     });
 

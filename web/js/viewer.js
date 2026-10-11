@@ -68,6 +68,7 @@ export class Preview3D {
     this.skinVisible = true;
     this.outerVisible = true;
     this.backEquipment = null; // cape | elytra | null
+    this.disposed = false;
 
     this.viewer = new skinview3d.SkinViewer({
       canvas,
@@ -139,6 +140,7 @@ export class Preview3D {
       viewer.renderPaused = document.hidden;
     };
     document.addEventListener("visibilitychange", syncVisibility);
+    this.syncVisibility = syncVisibility;
     syncVisibility();
   }
 
@@ -148,18 +150,20 @@ export class Preview3D {
    * 中键单击 / 拖动是平移（OrbitControls 的 PAN），所以只有「两次按下之间没拖动过」才算双击 ——
    * 不然每次平移完顺手再按一下就会把视角弹回去。用指针事件，和 OrbitControls 看的是同一套事件；
    * pointermove 的 buttons 位掩码里 4 就是中键。
+   *
+   * 三个处理函数都留着引用，dispose() 才摘得掉（canvas 是复用的，监听不摘会跨实例叠加）。
    */
   bindMiddleDoubleClick() {
     let lastClick = 0;
     let dragged = false;
     const canvas = this.canvas;
-    canvas.addEventListener("pointerdown", (event) => {
+    const onPointerDown = (event) => {
       if (event.button === MIDDLE_BUTTON) dragged = false;
-    });
-    canvas.addEventListener("pointermove", (event) => {
+    };
+    const onPointerMove = (event) => {
       if (event.buttons & 4) dragged = true;
-    });
-    canvas.addEventListener("pointerup", (event) => {
+    };
+    const onPointerUp = (event) => {
       if (event.button !== MIDDLE_BUTTON) return;
       if (dragged) {
         lastClick = 0; // 拖动过：这一下不算点击，也不参与双击
@@ -172,7 +176,15 @@ export class Preview3D {
         return;
       }
       lastClick = now;
-    });
+    };
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerup", onPointerUp);
+    this.pointerHandlers = [
+      ["pointerdown", onPointerDown],
+      ["pointermove", onPointerMove],
+      ["pointerup", onPointerUp],
+    ];
   }
 
   resize() {
@@ -271,5 +283,25 @@ export class Preview3D {
     // 平移过之后 target 已经不在原点，只把相机放回去就成了「站在原地看着别处」
     this.viewer.controls.target.set(0, 0, 0);
     this.viewer.resetCameraPose();
+  }
+
+  /**
+   * 拆掉这一份预览：组件卸载时必须调，否则 ResizeObserver、visibilitychange、canvas 上的
+   * 指针监听和 vendor 的 rAF 循环都会留着 —— 预览只有 64×64，但每帧一次 RenderPass + FXAA，
+   * 挂在后台标签页里就是一直烧。
+   *
+   * vendor 的 `SkinViewer.dispose()` 自己会取消 animationID（我们覆写的 draw 也把下一帧记在
+   * 同一个字段上，所以照样停得住）、摘掉 webglcontextlost/restored 并释放 controls 与 renderer，
+   * 这里只补它管不到的那几样。
+   */
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.observer.disconnect();
+    document.removeEventListener("visibilitychange", this.syncVisibility);
+    for (const [type, handler] of this.pointerHandlers) {
+      this.canvas.removeEventListener(type, handler);
+    }
+    this.viewer.dispose();
   }
 }
