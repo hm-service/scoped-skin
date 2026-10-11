@@ -8,7 +8,7 @@ export const LocaleSwitch = {
   },
   template: `
     <button class="locale-switch" type="button"
-            :title="t('切换到 {language}', { language: other.label })"
-            :aria-label="t('切换到 {language}', { language: other.label })"
+            :title="t('nav.switch-language', { language: other.label })"
+            :aria-label="t('nav.switch-language', { language: other.label })"
             @click="setLocale(other.id)">{{ current.short }}</button>`,
 };

@@ -52,23 +52,24 @@ export const SkinCard = {
     return { store, canvas, failed, label, short, shownTags, hiddenTags };
   },
   template: `
+    <!-- data-id 是给 CDP 验证脚本（tools/shot.mjs 的 --eval）按卡片选元素的稳定钩子，别删 -->
     <article class="card"
              :class="{ cape: item.category === 'cape', on: active, builtin: item.readonly }"
              role="listitem" :data-id="item.id" @click="$emit('select', item)"
              @mouseenter="store.hoverCard(item, $event)" @mouseleave="store.unhoverCard(item)">
       <button v-if="writable" class="fav-btn" :class="{ on: item.favorite }" type="button"
-              :title="item.favorite ? t('取消收藏') : t('收藏')" @click.stop="$emit('favorite', item)">
+              :title="item.favorite ? t('action.unfavorite') : t('action.favorite')" @click.stop="$emit('favorite', item)">
         <svg class="icon"><use href="#i-star"/></svg>
       </button>
-      <button v-if="!item.readonly && writable" class="edit-btn" type="button" :title="t('编辑')"
+      <button v-if="!item.readonly && writable" class="edit-btn" type="button" :title="t('action.edit')"
               @click.stop="$emit('edit', item)">
         <svg class="icon"><use href="#i-pencil"/></svg>
       </button>
       <div class="thumb">
         <canvas v-show="!failed" ref="canvas"></canvas>
-        <span v-if="failed" class="meta">{{ t("无法加载") }}</span>
+        <span v-if="failed" class="meta">{{ t("card.load-failed") }}</span>
       </div>
-      <span v-if="item.readonly" class="builtin-flag">{{ t("内置") }}</span>
+      <span v-if="item.readonly" class="builtin-flag">{{ t("card.builtin") }}</span>
       <div class="tags">
         <TagCapsule v-for="tag in shownTags" :key="tag" :tag="tag"/>
         <span v-if="hiddenTags" class="tag-more">+{{ hiddenTags }}</span>

@@ -52,7 +52,7 @@ export const StagePane = {
     return { store, canvas, animations, resetPose };
   },
   template: `
-    <section class="panel stage" :aria-label="t('3D 预览')">
+    <section class="panel stage" :aria-label="t('preview.title')">
       <div class="stage-head">
         <div class="stage-title">
           <div class="tags">
@@ -60,14 +60,14 @@ export const StagePane = {
             <span v-if="!store.stage.tags.length" class="tag-empty">{{ store.stage.fallback }}</span>
           </div>
           <span v-if="store.stage.model" class="badge">{{ store.stage.model }}</span>
-          <span v-if="store.stage.live" class="badge badge-live">{{ t("待上传") }}</span>
+          <span v-if="store.stage.live" class="badge badge-live">{{ t("preview.pending") }}</span>
         </div>
         <div class="stage-tools">
-          <button class="icon-btn" :class="{ on: store.state.view.rotate }" :title="t('自动旋转')"
+          <button class="icon-btn" :class="{ on: store.state.view.rotate }" :title="t('preview.auto-rotate')"
                   :aria-pressed="String(store.state.view.rotate)" @click="store.toggleRotate()">
             <svg class="icon"><use href="#i-rotate"/></svg>
           </button>
-          <button class="icon-btn" :title="t('重置视角')" @click="resetPose()">
+          <button class="icon-btn" :title="t('preview.reset')" @click="resetPose()">
             <svg class="icon"><use href="#i-target"/></svg>
           </button>
         </div>
@@ -75,8 +75,8 @@ export const StagePane = {
 
       <div class="stage-view">
         <canvas id="viewer" ref="canvas"></canvas>
-        <span class="stage-hint">{{ t("拖拽旋转 · 滚轮缩放 · 中键平移 · 中键双击重置") }}</span>
-        <div v-if="store.stageEmpty" class="stage-empty">{{ t("选一张皮肤开始预览") }}</div>
+        <span class="stage-hint">{{ t("preview.hint") }}</span>
+        <div v-if="store.stageEmpty" class="stage-empty">{{ t("preview.pick-skin") }}</div>
       </div>
 
       <div class="stage-foot">
@@ -86,34 +86,34 @@ export const StagePane = {
                   @click="store.setAnimation(animation.key)">{{ animation.label }}</button>
         </div>
         <button class="ghost-btn" id="btnSkin" :class="{ on: store.state.view.skinVisible }"
-                :title="t('显示 / 隐藏皮肤')" @click="store.toggleSkinVisible()">
-          <svg class="icon"><use :href="store.state.view.skinVisible ? '#i-eye' : '#i-eye-off'"/></svg>{{ t("皮肤") }}
+                :title="t('preview.toggle-skin')" @click="store.toggleSkinVisible()">
+          <svg class="icon"><use :href="store.state.view.skinVisible ? '#i-eye' : '#i-eye-off'"/></svg>{{ t("noun.skin") }}
         </button>
         <button class="ghost-btn" :class="{ on: store.state.view.outerVisible }"
-                :title="t('显示 / 隐藏外层')" @click="store.toggleOuterVisible()">
-          <svg class="icon"><use href="#i-layers"/></svg>{{ t("外层") }}
+                :title="t('preview.toggle-overlay')" @click="store.toggleOuterVisible()">
+          <svg class="icon"><use href="#i-layers"/></svg>{{ t("noun.overlay") }}
         </button>
         <!-- 背面三档：披风 / 鞘翅 / 隐藏（游戏里鞘翅用的就是披风那张材质） -->
-        <div class="seg seg-back" :aria-label="t('背面装备')">
-          <button :class="{ on: store.stageBackEquipment === 'cape' }" :title="t('披风')"
-                  :aria-label="t('披风')" :aria-pressed="String(store.stageBackEquipment === 'cape')"
+        <div class="seg seg-back" :aria-label="t('preview.back-equipment')">
+          <button :class="{ on: store.stageBackEquipment === 'cape' }" :title="t('noun.cape')"
+                  :aria-label="t('noun.cape')" :aria-pressed="String(store.stageBackEquipment === 'cape')"
                   @click="store.setBackEquipment('cape')">
             <svg class="icon"><use href="#i-cape"/></svg>
           </button>
-          <button :class="{ on: store.stageBackEquipment === 'elytra' }" :title="t('鞘翅')"
-                  :aria-label="t('鞘翅')" :aria-pressed="String(store.stageBackEquipment === 'elytra')"
+          <button :class="{ on: store.stageBackEquipment === 'elytra' }" :title="t('preview.elytra')"
+                  :aria-label="t('preview.elytra')" :aria-pressed="String(store.stageBackEquipment === 'elytra')"
                   @click="store.setBackEquipment('elytra')">
             <svg class="icon"><use href="#i-elytra"/></svg>
           </button>
-          <button :class="{ on: !store.stageBackEquipment }" :title="t('隐藏')"
-                  :aria-label="t('隐藏')" :aria-pressed="String(!store.stageBackEquipment)"
+          <button :class="{ on: !store.stageBackEquipment }" :title="t('preview.hide')"
+                  :aria-label="t('preview.hide')" :aria-pressed="String(!store.stageBackEquipment)"
                   @click="store.setBackEquipment(null)">
             <svg class="icon"><use href="#i-eye-off"/></svg>
           </button>
         </div>
         <button class="ghost-btn" :class="{ on: store.state.view.paused }"
-                :title="t('暂停 / 继续')" @click="store.togglePaused()">
-          <svg class="icon"><use :href="store.state.view.paused ? '#i-play' : '#i-pause'"/></svg>{{ store.state.view.paused ? t('继续') : t('暂停') }}
+                :title="t('preview.pause-toggle')" @click="store.togglePaused()">
+          <svg class="icon"><use :href="store.state.view.paused ? '#i-play' : '#i-pause'"/></svg>{{ store.state.view.paused ? t('preview.resume') : t('preview.pause') }}
         </button>
       </div>
     </section>`,

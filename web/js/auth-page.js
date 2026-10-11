@@ -18,7 +18,7 @@ const LoginPage = {
     async function submit() {
       const username = form.username.trim();
       if (!username || !form.password) {
-        error.value = t("账号和密码不能为空");
+        error.value = t("auth.empty");
         return;
       }
       busy.value = true;
@@ -31,7 +31,7 @@ const LoginPage = {
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
-          throw new Error(payload.detail || t("登录失败 ({status})", { status: response.status }));
+          throw new Error(payload.detail || t("auth.failed", { status: response.status }));
         }
         setToken(payload.token, payload.player);
         location.replace("/");
@@ -51,26 +51,26 @@ const LoginPage = {
         <header class="auth-head">
           <span class="brand-mark" aria-hidden="true"></span>
           <div>
-            <h1>{{ t("皮肤站") }}</h1>
-            <p>{{ t("Minecraft Skin Library") }}</p>
+            <h1>{{ t("brand.site") }}</h1>
+            <p>{{ t("brand.sub") }}</p>
           </div>
           <LocaleSwitch/>
         </header>
 
         <form class="auth-form" novalidate @submit.prevent="submit">
           <label class="field">
-            <span>{{ t("账号") }}</span>
+            <span>{{ t("auth.account") }}</span>
             <input ref="usernameInput" v-model="form.username" type="text"
                    autocomplete="username" spellcheck="false" required>
           </label>
           <label class="field">
-            <span>{{ t("密码") }}</span>
+            <span>{{ t("auth.password") }}</span>
             <input v-model="form.password" type="password"
                    autocomplete="current-password" required>
           </label>
           <p v-if="error" class="auth-error">{{ error }}</p>
           <button type="submit" class="primary-btn auth-submit" :disabled="busy">
-            {{ busy ? t('登录中…') : t('登录') }}
+            {{ busy ? t('auth.submitting') : t('auth.submit') }}
           </button>
         </form>
       </section>
@@ -82,6 +82,6 @@ if (getToken()) {
   location.replace("/");
 } else {
   const app = createApp(LoginPage);
-  installI18n(app, t("登录 · 皮肤站"));
+  installI18n(app, t("title.login"));
   app.mount("#app");
 }

@@ -1,21 +1,31 @@
-# 编译产物
+# 约定：本地 / 临时目录一律以 . 开头（.github 是唯一例外，它是真正的源码）
+
+# 构建产物
+/.dist/
 /scoped-skin
 *.test
 
-# Go 缓存（本机 module cache 只读，缓存落在仓库里）
-.go-mod-cache/
-.go-build/
+# Go 缓存（默认在 $HOME；万一临时重定向到仓库里，也别提交）
+/.go-mod-cache/
+/.go-build/
 
 # 运行时数据（贴图库 + 索引 + 审计日志 + RSA 密钥），首次启动会自动重建
-data/
-data_sample/
+/.data/
+/.data_sample/
 
 # 参考项目（本地 clone，不纳入本仓库）
-ref/
-blessing-skin-server/
+/.ref/
+/.blessing-skin-server/
 
 # 验证截图
-shots/
+/.shots/
 
 # Python 原型（已归档：Go 版重写前的实现，只作参考，不再维护）
-.prototype/
+/.prototype/
+
+# 旧的非点号路径：历史上用过，万一又冒出来同样不能提交
+/data/
+/data_sample/
+/ref/
+/shots/
+/blessing-skin-server/

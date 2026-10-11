@@ -79,7 +79,7 @@ export function loadImage(url) {
     const image = new Image();
     image.crossOrigin = "anonymous";
     image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error(t("图片加载失败：{url}", { url })));
+    image.onerror = () => reject(new Error(t("error.image-load", { url })));
     image.src = url;
   });
 }

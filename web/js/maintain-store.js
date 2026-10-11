@@ -9,13 +9,13 @@
 import { api } from "./api.js";
 import { getToken, getUser, setToken, toLogin } from "./auth.js";
 import { t } from "./i18n.js";
-import { roleLabel } from "./roles.js";
+import { ROLES, roleLabel } from "./roles.js";
 import { createToast } from "./toast.js";
 import { computed, reactive } from "./vue.js";
 
 const emptyDraft = () => ({ username: "", player_name: "", password: "", role: "normal", uuid: "" });
 
-/** 与 core 的规则保持一致：角色名 ^[A-Za-z0-9_]{3,16}$、UUID 32 位十六进制（可带横线）。
+/** 与 core 的规则保持一致：游戏内名称 ^[A-Za-z0-9_]{3,16}$、UUID 32 位十六进制（可带横线）。
  *  前端先拦一道只是为了不用等一次往返，真正的闸门仍在后端。 */
 const PLAYER_NAME_PATTERN = /^[A-Za-z0-9_]{3,16}$/;
 const USERNAME_PATTERN = /^[a-z0-9@._]+$/;
@@ -28,16 +28,16 @@ const UUID_PATTERN = /^(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{1
 
 /** 校验一组账号字段；返回错误文案，通过则返回空串。密码留空表示不改（编辑时）。 */
 function validateAccount({ username, player_name, uuid, password }) {
-  if ([...username].length > MAX_USERNAME_LENGTH) return t("账号名最长 32 个字符");
-  if (!USERNAME_PATTERN.test(username)) return t("账号名只能是小写字母、数字、@、. 和 _");
-  if (!PLAYER_NAME_PATTERN.test(player_name)) return t("游戏内名称只能是大写字母、小写字母、数字或下划线，长度 3-16");
-  if (uuid && !UUID_PATTERN.test(uuid)) return t("UUID 必须是 32 位十六进制字符");
+  if ([...username].length > MAX_USERNAME_LENGTH) return t("valid.username-long");
+  if (!USERNAME_PATTERN.test(username)) return t("valid.username");
+  if (!PLAYER_NAME_PATTERN.test(player_name)) return t("valid.player-name");
+  if (uuid && !UUID_PATTERN.test(uuid)) return t("valid.uuid");
   if (password) {
     const length = [...password].length;
     if (length < MIN_PASSWORD_LENGTH || length > MAX_PASSWORD_LENGTH) {
-      return t("密码长度 {min}-{max} 位", { min: MIN_PASSWORD_LENGTH, max: MAX_PASSWORD_LENGTH });
+      return t("valid.password-length", { min: MIN_PASSWORD_LENGTH, max: MAX_PASSWORD_LENGTH });
     }
-    if (!PASSWORD_PATTERN.test(password)) return t("密码只能是大写字母、小写字母、数字或下划线");
+    if (!PASSWORD_PATTERN.test(password)) return t("valid.password-charset");
   }
   return "";
 }
@@ -128,7 +128,7 @@ function createStore() {
   async function create() {
     const draft = state.draft;
     if (!draft.username.trim() || !draft.player_name.trim() || !draft.password) {
-      toastError(t("账号、游戏内名称、密码不能为空"));
+      toastError(t("user.create-empty"));
       return;
     }
     const invalid = validateAccount({
@@ -157,7 +157,7 @@ function createStore() {
       applySnapshot(payload);
       state.draft = emptyDraft();
       state.draftOpen = false;
-      toast(t("已创建「{name}」", { name: payload.user.player_name }));
+      toast(t("user.created", { name: payload.user.player_name }));
     } catch (error) {
       fail(error);
     } finally {
@@ -184,7 +184,7 @@ function createStore() {
     const editing = state.editing;
     if (!editing) return;
     if (!editing.username.trim() || !editing.player_name.trim()) {
-      toastError(t("账号和游戏内名称都不能为空"));
+      toastError(t("user.edit-empty"));
       return;
     }
     const invalid = validateAccount({
@@ -225,11 +225,11 @@ function createStore() {
         return;
       }
       if (selfEdit && editing.role !== "admin") {
-        toast(t("已退出管理员身份"));
+        toast(t("user.role-removed"));
         setTimeout(() => location.replace("/"), 900);
         return;
       }
-      toast(t("已保存"));
+      toast(t("user.saved"));
     } catch (error) {
       fail(error);
     } finally {
@@ -238,10 +238,10 @@ function createStore() {
   }
 
   async function remove(user) {
-    if (!confirm(t("删除用户「{name}」？不可撤销。", { name: user.player_name }))) return;
+    if (!confirm(t("user.delete-confirm", { name: user.player_name }))) return;
     try {
       applySnapshot(await api(`/api/admin/users/${user.uuid}`, { method: "DELETE" }));
-      toast(t("已删除「{name}」", { name: user.player_name }));
+      toast(t("user.deleted", { name: user.player_name }));
     } catch (error) {
       fail(error);
     }
@@ -255,6 +255,7 @@ function createStore() {
     me,
     isSelf,
     roleLabel,
+    roleOptions: ROLES,
     load,
     startCreate,
     cancelCreate,

@@ -128,10 +128,12 @@ const App = {
       },
     );
 
+    // 页面别处的漏网拖拽：吞掉事件，免得浏览器直接打开/接管这张图。
+    // 具名注册、卸载时摘掉 —— 根组件虽然不常卸载，但监听挂在 document 上，留着会跨实例叠加。
+    const swallowDrag = (event) => event.preventDefault();
     onMounted(async () => {
-      // 页面别处的漏网拖拽：吞掉事件，免得浏览器直接打开/接管这张图
-      document.addEventListener("dragover", (event) => event.preventDefault());
-      document.addEventListener("drop", (event) => event.preventDefault());
+      document.addEventListener("dragover", swallowDrag);
+      document.addEventListener("drop", swallowDrag);
       try {
         await store.loadTags();
         await store.loadMe();
@@ -139,6 +141,10 @@ const App = {
       } catch (error) {
         store.toastError(error.message);
       }
+    });
+    onBeforeUnmount(() => {
+      document.removeEventListener("dragover", swallowDrag);
+      document.removeEventListener("drop", swallowDrag);
     });
 
     return { store, isActive, leaveUploadTab, gridRef, gridWindow, gridItems, onGridScroll };
@@ -149,17 +155,17 @@ const App = {
 
       <main class="workspace">
         <!-- ── 左：贴图库 ─────────────────────────────────────── -->
-        <section class="panel" :aria-label="t('贴图库')">
+        <section class="panel" :aria-label="t('library.textures')">
           <div class="panel-head">
             <div class="tabs" role="tablist">
               <!-- guest 是只读身份组：收藏不了任何东西，这个 tab 只会是空的，直接不给它看 -->
               <button v-if="store.canWrite" class="tab" role="tab" :class="{ on: store.state.tab === 'favorites' }"
                       @click="store.setTab('favorites')">
-                <svg class="icon"><use href="#i-star"/></svg>{{ t("我的收藏") }}
+                <svg class="icon"><use href="#i-star"/></svg>{{ t("library.favorites") }}
               </button>
               <button class="tab" role="tab" :class="{ on: store.state.tab === 'all' }"
                       @click="store.setTab('all')">
-                <svg class="icon"><use href="#i-grid"/></svg>{{ t("全部") }}
+                <svg class="icon"><use href="#i-grid"/></svg>{{ t("library.all") }}
               </button>
             </div>
             <button v-if="store.canUpload" class="tab tab-upload" role="tab"
@@ -169,19 +175,19 @@ const App = {
                     @dragover.prevent="store.state.uploadOver = true"
                     @dragleave="leaveUploadTab"
                     @drop.prevent="store.dropOnUploadTab($event.dataTransfer?.files?.[0])">
-              <svg class="icon"><use href="#i-upload"/></svg>{{ t("上传新皮肤") }}
+              <svg class="icon"><use href="#i-upload"/></svg>{{ t("library.upload-skin") }}
             </button>
           </div>
 
           <div class="library-body">
-            <nav class="rail" :aria-label="t('类别')">
+            <nav class="rail" :aria-label="t('library.category')">
               <button class="rail-btn" :class="{ on: store.state.category === 'skin' }"
                       @click="store.setCategory('skin')">
-                <svg class="icon"><use href="#i-skin"/></svg>{{ t("皮肤") }}
+                <svg class="icon"><use href="#i-skin"/></svg>{{ t("noun.skin") }}
               </button>
               <button class="rail-btn" :class="{ on: store.state.category === 'cape' }"
                       @click="store.setCategory('cape')">
-                <svg class="icon"><use href="#i-cape"/></svg>{{ t("披风") }}
+                <svg class="icon"><use href="#i-cape"/></svg>{{ t("noun.cape") }}
               </button>
             </nav>
 
@@ -192,11 +198,11 @@ const App = {
                 <label class="search">
                   <svg class="icon"><use href="#i-search"/></svg>
                   <input type="search" autocomplete="off" spellcheck="false"
-                         :placeholder="t('搜索标签 · 空格分隔取交集')" :value="store.state.query"
+                         :placeholder="t('library.search-placeholder')" :value="store.state.query"
                          @input="store.setQuery($event.target.value)"
                          @keydown.enter.prevent="store.submitSearch()"
                          @keydown.esc="store.clearQuery()">
-                  <button v-if="store.state.query" type="button" class="search-clear" :title="t('清除')"
+                  <button v-if="store.state.query" type="button" class="search-clear" :title="t('library.clear')"
                           @click="store.clearQuery()">
                     <svg class="icon"><use href="#i-x"/></svg>
                   </button>
@@ -208,7 +214,7 @@ const App = {
                    v-if="!store.uploading && store.state.items.length"
                    @scroll.passive="onGridScroll">
                 <div class="grid-spacer" role="presentation" :style="{ height: gridWindow.height + 'px' }">
-                  <div class="grid-window" role="list" :aria-label="t('贴图库')"
+                  <div class="grid-window" role="list" :aria-label="t('library.textures')"
                        :style="{ transform: 'translateY(' + gridWindow.offset + 'px)' }">
                     <SkinCard v-for="item in gridItems" :key="item.id" :item="item"
                               :active="isActive(item)" :writable="store.canWrite"
@@ -219,10 +225,10 @@ const App = {
               </div>
 
               <p class="placeholder" v-if="!store.uploading && !store.state.items.length">
-                <span v-if="store.emptyKind === 'search'">{{ t("没有同时带上", { noun: store.emptyNoun }) }}<b
-                  v-for="token in store.emptyTokens" :key="token">{{ t("「{tag}」", { tag: token }) }}</b>{{ t("的{noun}。", { noun: store.emptyNoun }) }}</span>
-                <span v-else-if="store.emptyKind === 'favorites'">{{ t("还没有收藏{noun}。", { noun: store.emptyNoun }) }}<br>{{ t("点卡片右上角的星标收藏。") }}</span>
-                <span v-else>{{ t("{noun}库是空的", { noun: store.emptyNoun }) }}{{ store.canUpload ? t("，去「上传新皮肤」传一张。") : t("。") }}</span>
+                <span v-if="store.emptyKind === 'search'">{{ t("empty.no-match", { noun: store.emptyNoun }) }}<b
+                  v-for="token in store.emptyTokens" :key="token">{{ t("empty.tag", { tag: token }) }}</b>{{ t("empty.no-match-tail", { noun: store.emptyNoun }) }}</span>
+                <span v-else-if="store.emptyKind === 'favorites'">{{ t("empty.no-favorites", { noun: store.emptyNoun }) }}<br>{{ t("empty.favorite-hint") }}</span>
+                <span v-else>{{ t("empty.library", { noun: store.emptyNoun }) }}{{ store.canUpload ? t("empty.upload-hint") : t("common.period") }}</span>
               </p>
 
               <UploadPanel v-if="store.uploading"/>
@@ -241,7 +247,7 @@ const App = {
 
 if (requireAuth()) {
   const app = createApp(App);
-  installI18n(app, t("皮肤站 · Minecraft Skin Library"));
+  installI18n(app, t("title.library"));
   app.mount("#app");
   // 调试用句柄：浏览器控制台里可以直接检查 / 驱动界面状态
   window.__skin = {

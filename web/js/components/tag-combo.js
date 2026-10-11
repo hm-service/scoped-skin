@@ -95,7 +95,7 @@ export const TagCombo = {
 
     return {
       input, text, open, index, needle, suggestions,
-      add, apply, move, onInput, onKeydown, onBlur, focusAndShow,
+      apply, move, onInput, onKeydown, onBlur, focusAndShow,
     };
   },
   template: `
@@ -103,7 +103,7 @@ export const TagCombo = {
       <span class="tag-selected">
         <span v-for="tag in selected" :key="tag" class="tag-chip">
           <span>{{ tag }}</span>
-          <button type="button" class="remove" :title="t('移除')" @click.stop="$emit('remove', tag)">
+          <button type="button" class="remove" :title="t('tag.remove')" @click.stop="$emit('remove', tag)">
             <svg class="icon"><use href="#i-x"/></svg>
           </button>
         </span>
@@ -112,26 +112,26 @@ export const TagCombo = {
         <input ref="input" v-model="text" type="text" autocomplete="off" spellcheck="false"
                role="combobox" :aria-expanded="String(open)" aria-controls="tagSuggest"
                aria-autocomplete="list"
-               :placeholder="selected.length ? t('继续添加…') : t('输入标签后回车，或从下拉选择')"
+               :placeholder="selected.length ? t('tag.add-more') : t('tag.placeholder')"
                @input="onInput" @focus="show" @blur="onBlur" @keydown="onKeydown">
         <ul class="tag-suggest" id="tagSuggest" role="listbox" v-show="open">
-          <li v-if="!suggestions.length" class="sug-empty">{{ t("没有匹配，回车新建") }}</li>
+          <li v-if="!suggestions.length" class="sug-empty">{{ t("tag.no-match") }}</li>
           <li v-for="(entry, i) in suggestions" :key="entry.action + entry.tag" role="option"
               class="sug-item" :class="{ active: i === index, create: entry.action === 'create' }"
               :title="entry.action === 'create'
-                ? t('新建标签 {tag}', { tag: entry.tag })
-                : t('用过 {count} 次', { count: entry.count })"
+                ? t('tag.create', { tag: entry.tag })
+                : t('tag.usage', { count: entry.count })"
               @mousedown.prevent="apply(entry)">
             <template v-if="entry.action === 'create'">
               <svg class="icon"><use href="#i-plus"/></svg>
-              <span>{{ t("新建「{tag}」", { tag: entry.tag }) }}</span>
+              <span>{{ t("tag.create-quoted", { tag: entry.tag }) }}</span>
             </template>
             <template v-else>
               <span v-if="entry.from >= 0">
                 {{ entry.tag.slice(0, entry.from) }}<mark>{{ entry.tag.slice(entry.from, entry.from + needle.length) }}</mark>{{ entry.tag.slice(entry.from + needle.length) }}
               </span>
               <span v-else>{{ entry.tag }}</span>
-              <span class="sug-count">{{ t("用过 {count} 次", { count: entry.count }) }}</span>
+              <span class="sug-count">{{ t("tag.usage", { count: entry.count }) }}</span>
             </template>
           </li>
         </ul>

@@ -17,20 +17,20 @@ import { computed, reactive, ref } from "./vue.js";
 const MODEL_LABELS = { "skin.steve": "steve", "skin.alex": "alex" };
 
 /** 模型值的展示名（下拉选项与各处徽标共用一份）；值仍是接口要的 steve / alex。 */
-const MODEL_TEXTS = { steve: t("Steve（经典）"), alex: t("Alex（纤细）") };
+const MODEL_TEXTS = { steve: t("upload.model-steve"), alex: t("upload.model-alex") };
 export const MODEL_OPTIONS = Object.entries(MODEL_TEXTS).map(([value, label]) => ({ value, label }));
 
 /** 卡片那种一格宽的窄位置只放大类的「经典 / 纤细」，全名留给下拉与舞台徽标。 */
-const MODEL_SHORTS = { "skin.steve": t("经典"), "skin.alex": t("纤细") };
+const MODEL_SHORTS = { "skin.steve": t("model.classic"), "skin.alex": t("model.slim") };
 
 /** 上传表单的粗分类 + 模型 → 接口要的 kind（没有「自动」这一档，模型由前端显式选定）。 */
 const kindOf = (category, model) => (category === "cape" ? "cape" : `skin.${model}`);
 
 export const ANIMATIONS = [
-  { key: "idle", label: t("站立") },
-  { key: "walk", label: t("行走") },
-  { key: "run", label: t("奔跑") },
-  { key: "fly", label: t("飞行") },
+  { key: "idle", label: t("pose.idle") },
+  { key: "walk", label: t("pose.walk") },
+  { key: "run", label: t("pose.run") },
+  { key: "fly", label: t("pose.fly") },
 ];
 
 /** 3D 预览实例的落脚点（skinview3d 的对象不放进响应式状态，避免被代理）。 */
@@ -50,13 +50,13 @@ function forgetThumbnail(id) {
 }
 
 export function modelLabel(item) {
-  if (item.kind === "cape") return t("披风");
+  if (item.kind === "cape") return t("noun.cape");
   return MODEL_TEXTS[MODEL_LABELS[item.kind]] ?? "";
 }
 
 /** 卡片一格的窄位置用：经典 / 纤细 / 披风。 */
 export function modelShort(item) {
-  if (item.kind === "cape") return t("披风");
+  if (item.kind === "cape") return t("noun.cape");
   return MODEL_SHORTS[item.kind] ?? "";
 }
 
@@ -157,9 +157,9 @@ function createStore() {
     if (pendingActive.value) {
       return {
         live: true,
-        model: state.category === "cape" ? t("披风") : MODEL_TEXTS[state.model] ?? state.model,
+        model: state.category === "cape" ? t("noun.cape") : MODEL_TEXTS[state.model] ?? state.model,
         tags: [...state.selectedTags],
-        fallback: t("未添加标签"),
+        fallback: t("preview.no-tags"),
       };
     }
     if (state.skin) {
@@ -170,15 +170,15 @@ function createStore() {
         fallback: shortId(state.skin),
       };
     }
-    return { live: false, model: "", tags: [], fallback: t("未选择皮肤") };
+    return { live: false, model: "", tags: [], fallback: t("preview.no-skin") };
   });
 
   const stageEmpty = computed(() => !stageSkin.value);
 
   const statsText = computed(() => {
     const stats = state.stats;
-    if (!stats) return t("载入中…");
-    return t("皮肤 {skins} · 披风 {capes} · 收藏 {favorites}", {
+    if (!stats) return t("common.loading");
+    return t("library.stats", {
       skins: stats.skins,
       capes: stats.capes,
       favorites: stats.favorites,
@@ -188,13 +188,13 @@ function createStore() {
   const paneTitle = computed(() => {
     if (uploading.value) {
       if (state.pending.editing) {
-        return t("编辑{noun}", { noun: state.category === "skin" ? t("皮肤") : t("披风") });
+        return t("library.edit-noun", { noun: state.category === "skin" ? t("noun.skin") : t("noun.cape") });
       }
-      return state.category === "skin" ? t("上传新皮肤") : t("上传新披风");
+      return state.category === "skin" ? t("library.upload-skin") : t("library.upload-cape");
     }
     const titles = {
-      skin: { all: t("全部皮肤"), favorites: t("收藏的皮肤") },
-      cape: { all: t("全部披风"), favorites: t("收藏的披风") },
+      skin: { all: t("library.skins-all"), favorites: t("library.skins-favorites") },
+      cape: { all: t("library.capes-all"), favorites: t("library.capes-favorites") },
     };
     return titles[state.category][state.tab];
   });
@@ -202,8 +202,8 @@ function createStore() {
   const paneCount = computed(() => {
     if (uploading.value) return "";
     return state.query.trim()
-      ? t("筛出 {count} 个", { count: state.items.length })
-      : t("{count} 个", { count: state.items.length });
+      ? t("library.filtered", { count: state.items.length })
+      : t("common.count", { count: state.items.length });
   });
 
   const emptyKind = computed(() => {
@@ -211,10 +211,13 @@ function createStore() {
     return state.tab === "favorites" ? "favorites" : "none";
   });
 
-  const emptyNoun = computed(() => (state.category === "skin" ? t("皮肤") : t("披风")));
+  const emptyNoun = computed(() => (state.category === "skin" ? t("noun.skin") : t("noun.cape")));
 
-  /** 搜索串切出来的词（与后端 core.SplitQuery 一致：按空白切、大小写不敏感去重）。 */
-  const queryTokens = computed(() => {
+  /**
+   * 搜索串切出来的词（与后端 core.SplitQuery 一致：按空白切、大小写不敏感去重）。
+   * 空状态提示按它逐词加粗，所以对外就叫 emptyTokens。
+   */
+  const emptyTokens = computed(() => {
     const seen = new Set();
     const tokens = [];
     for (const token of state.query.split(/\s+/)) {
@@ -225,21 +228,20 @@ function createStore() {
     }
     return tokens;
   });
-  const emptyTokens = computed(() => queryTokens.value);
 
   /** 上传表单的按钮文案与可用性（已存在时只有改动过才能提交）。 */
   const submitState = computed(() => {
     const pending = state.pending;
-    if (!pending.file) return { label: t("上传"), disabled: true };
-    if (pending.error) return { label: t("文件不可用"), disabled: true };
-    if (pending.checking) return { label: t("校验中…"), disabled: true };
-    if (pending.submitting) return { label: t("提交中…"), disabled: true };
+    if (!pending.file) return { label: t("upload.submit"), disabled: true };
+    if (pending.error) return { label: t("upload.file-unusable"), disabled: true };
+    if (pending.checking) return { label: t("upload.validating"), disabled: true };
+    if (pending.submitting) return { label: t("upload.submitting"), disabled: true };
     const existing = pending.registered;
-    if (!existing) return { label: t("上传"), disabled: false };
-    if (existing.readonly) return { label: t("内置资源"), disabled: true };
+    if (!existing) return { label: t("upload.submit"), disabled: false };
+    if (existing.readonly) return { label: t("upload.builtin"), disabled: true };
     // 同一份内容（id 相同）改标签或改模型都算有变化
     const changed = !sameTags(state.selectedTags, existing.tags) || pendingKind.value !== existing.kind;
-    return changed ? { label: t("保存修改"), disabled: false } : { label: t("已上传"), disabled: true };
+    return changed ? { label: t("upload.save"), disabled: false } : { label: t("upload.uploaded"), disabled: true };
   });
 
   /** 编辑一条已入库的记录时才谈得上删除：只读资源不能删，删除本身也只给 admin。 */
@@ -251,20 +253,20 @@ function createStore() {
   const dropText = computed(() => {
     const pending = state.pending;
     if (!pending.file) {
-      return { title: t("点击或拖入 PNG"), detail: t("64×64 皮肤 / 64×32 披风") };
+      return { title: t("upload.drop"), detail: t("upload.size-hint") };
     }
     if (pending.error) return { title: pending.name, detail: pending.error };
     const size = `${(pending.size / 1024).toFixed(1)} KB`;
     const head = pending.id
       ? `${size} · sha256 ${pending.id.slice(0, 12)}…`
-      : t("{size} · 正在校验…", { size });
+      : t("upload.checking", { size });
     const existing = pending.registered;
-    if (!existing) return { title: pending.name, detail: t("{head} · 还没有上传过", { head }) };
-    if (existing.readonly) return { title: pending.name, detail: t("{head} · 内置资源不可修改", { head }) };
-    const tags = existing.tags.length ? existing.tags.join(" / ") : t("无");
+    if (!existing) return { title: pending.name, detail: t("upload.never", { head }) };
+    if (existing.readonly) return { title: pending.name, detail: t("upload.builtin-readonly", { head }) };
+    const tags = existing.tags.length ? existing.tags.join(" / ") : t("common.none");
     return {
       title: pending.name,
-      detail: t("{head} · 已上传过 · 标签 {tags} · 模型 {model}", {
+      detail: t("upload.existing", {
         head,
         tags,
         model: modelLabel(existing),
@@ -335,7 +337,7 @@ function createStore() {
       // 挑一张新披风就把它冲掉会很难用（鞘翅用的也是这张贴图，切完贴图它还得在）。
       // guest 是只读身份组：只能预览，不用提示「已穿上」
       if (canWrite.value) {
-        toast(t("已穿上「{name}」", { name: item.tags?.length ? item.tags.join(" · ") : shortId(item) }));
+        toast(t("toast.equipped", { name: item.tags?.length ? item.tags.join(" · ") : shortId(item) }));
       }
     }
     if (persist && canWrite.value) equip(item);
@@ -348,7 +350,7 @@ function createStore() {
       item.favorite = updated.favorite;
       if (updated.stats) state.stats = updated.stats;
       if (state.tab === "favorites") await refresh();
-      toast(item.favorite ? t("已加入收藏") : t("已取消收藏"));
+      toast(item.favorite ? t("toast.favorited") : t("toast.unfavorited"));
     } catch (error) {
       toastError(error.message);
     }
@@ -357,7 +359,7 @@ function createStore() {
   /** @returns {Promise<boolean>} 真的删掉了才是 true（取消确认 / 报错都是 false）。 */
   async function remove(item) {
     if (!canDelete.value) {
-      toastError(t("只有管理员能删除资源"));
+      toastError(t("upload.delete-admin-only"));
       return false;
     }
     // 先问后端「谁在穿它」：有人用就把名字列出来（删除会让他们变成未装备，得让管理员知道）
@@ -367,13 +369,13 @@ function createStore() {
     } catch {
       // 读不到名单不该挡删除：退回普通确认
     }
-    const noun = item.category === "skin" ? t("皮肤") : t("披风");
+    const noun = item.category === "skin" ? t("noun.skin") : t("noun.cape");
     const prompt = wearers.length
-      ? t("有 {count} 个账号正在使用：{names}。删除后这些账号会取消装备，确定删除？", {
+      ? t("asset.delete-in-use", {
           count: wearers.length,
           names: wearers.map((user) => user.player_name).join("、"),
         })
-      : t("删除这个{noun}？", { noun });
+      : t("confirm.delete", { noun });
     if (!confirm(prompt)) return false;
     try {
       const payload = await api(`/api/items/${item.id}`, { method: "DELETE" });
@@ -386,7 +388,7 @@ function createStore() {
       if (payload.stats) state.stats = payload.stats;
       await refresh();
       await loadTags();
-      toast(wearers.length ? t("已删除（{count} 个账号已取消装备）", { count: wearers.length }) : t("已删除"));
+      toast(wearers.length ? t("asset.deleted-unequipped", { count: wearers.length }) : t("toast.deleted"));
       return true;
     } catch (error) {
       toastError(error.message);
@@ -417,7 +419,7 @@ function createStore() {
 
   async function setTab(tab) {
     if (tab === "upload" && !canUpload.value) {
-      toastError(t("当前身份组不能上传贴图"));
+      toastError(t("upload.forbidden"));
       return;
     }
     hideHover();
@@ -453,15 +455,14 @@ function createStore() {
 
   /** 这个标签是不是已经在搜索串里（标签面板据此高亮）。 */
   function queryHasTag(tag) {
-    const needle = tag.toLowerCase();
-    return queryTokens.value.some((token) => token.toLowerCase() === needle);
+    return hasTag(emptyTokens.value, tag);
   }
 
   /** 标签面板点一下＝把标签加进搜索串（再点一下移出去），然后立刻搜。 */
   function toggleQueryTag(tag) {
     const needle = tag.toLowerCase();
-    const kept = queryTokens.value.filter((token) => token.toLowerCase() !== needle);
-    if (kept.length === queryTokens.value.length) kept.push(tag);
+    const kept = emptyTokens.value.filter((token) => token.toLowerCase() !== needle);
+    if (kept.length === emptyTokens.value.length) kept.push(tag);
     state.query = kept.join(" ");
     submitSearch();
   }
@@ -481,13 +482,13 @@ function createStore() {
   function addTag(tag) {
     const clean = tag.trim();
     if (!clean || hasTag(state.selectedTags, clean)) return;
-    // 与后端一致的上限（DESIGN.md 4.2）：最多 16 个、单条最长 64 字符
+    // 与后端一致的上限（DESIGN.md 4.2）：最多 8 个、单条最长 32 字符
     if ([...clean].length > MAX_TAG_LENGTH) {
-      toast(t("单个标签最长 {count} 个字符", { count: MAX_TAG_LENGTH }));
+      toast(t("tag.too-long", { count: MAX_TAG_LENGTH }));
       return;
     }
     if (state.selectedTags.length >= MAX_TAGS) {
-      toast(t("标签最多 {count} 个", { count: MAX_TAGS }));
+      toast(t("tag.max", { count: MAX_TAGS }));
       return;
     }
     state.selectedTags.push(clean);
@@ -526,7 +527,7 @@ function createStore() {
         if (token !== checkToken) return;
         pending.checking = false;
         pending.registered = null;
-        pending.error = error.message || t("校验失败");
+        pending.error = error.message || t("upload.check-failed");
       });
   }
 
@@ -559,7 +560,7 @@ function createStore() {
     const size = await pngSize(file);
     if (readToken !== fileToken) return; // 期间又换了文件
     if (!size) {
-      toastError(t("只支持 PNG 文件"));
+      toastError(t("upload.png-only"));
       return;
     }
     clearPendingFile();
@@ -582,7 +583,7 @@ function createStore() {
       })
       .catch(() => {
         if (token !== imageToken) return;
-        toastError(t("贴图读取失败"));
+        toastError(t("upload.read-failed"));
       });
   }
 
@@ -592,21 +593,21 @@ function createStore() {
    */
   async function editItem(item) {
     if (!canWrite.value) {
-      toastError(t("当前身份组不能修改资源"));
+      toastError(t("upload.forbidden-edit"));
       return;
     }
     if (item.readonly) {
-      toastError(t("内置资源不可修改"));
+      toastError(t("upload.cannot-edit"));
       return;
     }
     let file;
     try {
       const response = await fetch(item.texture_url);
-      if (!response.ok) throw new Error(t("请求失败 ({status})", { status: response.status }));
+      if (!response.ok) throw new Error(t("error.request", { status: response.status }));
       const blob = await response.blob();
       file = new File([blob], `${shortId(item).slice(1)}.png`, { type: "image/png" });
     } catch (error) {
-      toastError(error.message || t("贴图读取失败"));
+      toastError(error.message || t("upload.read-failed"));
       return;
     }
     if (!uploading.value) await setTab("upload");
@@ -633,13 +634,13 @@ function createStore() {
     if (!file || !canUpload.value) return;
     const size = await pngSize(file);
     if (!size) {
-      toastError(t("只支持 PNG 文件"));
+      toastError(t("upload.png-only"));
       return;
     }
     const category = categoryOfSize(size);
     if (state.category !== category) {
       state.category = category;
-      toast(t("按尺寸识别为{noun}，已切换", { noun: category === "skin" ? t("皮肤") : t("披风") }));
+      toast(t("upload.detected", { noun: category === "skin" ? t("noun.skin") : t("noun.cape") }));
     }
     if (!uploading.value) await setTab("upload");
     setPendingFile(file);
@@ -648,7 +649,7 @@ function createStore() {
   async function submitUpload() {
     const pending = state.pending;
     if (!pending.file) {
-      toastError(t("先选一个 PNG 文件"));
+      toastError(t("upload.pick-png"));
       return;
     }
     if (submitState.value.disabled) return;
@@ -662,7 +663,7 @@ function createStore() {
     pending.submitting = true;
     try {
       const item = await api("/api/skins", { method: "POST", body });
-      toast(item.updated ? t("已更新标签 / 模型") : t("上传成功"));
+      toast(item.updated ? t("upload.tags-updated") : t("upload.success"));
       clearPendingFile();
       await loadTags();
       thumbnails.set(item.id, loadImage(item.texture_url));
@@ -693,7 +694,7 @@ function createStore() {
   function setBackEquipment(equipment) {
     state.backEquipment = equipment;
     if (equipment && !stageCapeUrl.value) {
-      toast(t("还没选披风，去「披风」挑一张"));
+      toast(t("toast.no-cape"));
     }
   }
 
@@ -710,7 +711,6 @@ function createStore() {
     roleLabel,
     // 派生
     uploading,
-    pendingActive,
     pendingKind,
     stageSkin,
     stageCapeUrl,
@@ -733,7 +733,6 @@ function createStore() {
     loadMe,
     refresh,
     select,
-    equip,
     toggleFavorite,
     remove,
     setTab,
@@ -744,7 +743,6 @@ function createStore() {
     queryHasTag,
     toggleQueryTag,
     setPendingFile,
-    clearPendingFile,
     dropOnUploadTab,
     editItem,
     removePending,
@@ -765,7 +763,6 @@ function createStore() {
     // 小工具
     hasTag: (tag) => hasTag(state.selectedTags, tag),
     modelLabel,
-    shortId,
   });
 }
 

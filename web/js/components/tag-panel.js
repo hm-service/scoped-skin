@@ -36,19 +36,19 @@ export const TagPanel = {
   template: `
     <div ref="root" class="tag-panel">
       <button type="button" class="tag-panel-btn" :class="{ on: open }"
-              :title="t('全部标签')" :aria-label="t('全部标签')" :aria-expanded="String(open)"
+              :title="t('library.tags-all')" :aria-label="t('library.tags-all')" :aria-expanded="String(open)"
               @click="open = !open">
         <svg class="icon"><use href="#i-tag"/></svg>
       </button>
       <div class="tag-panel-pop" v-show="open">
-        <p class="tag-panel-hint">{{ t("点击标签加入搜索") }}</p>
+        <p class="tag-panel-hint">{{ t("library.tags-hint") }}</p>
         <div class="tag-panel-list">
           <button v-for="entry in tags" :key="entry.tag" type="button"
                   class="tag-chip ghost" :class="{ on: store.queryHasTag(entry.tag) }"
                   @click="store.toggleQueryTag(entry.tag)">
             <span>{{ entry.tag }}</span><span class="count">{{ entry.count }}</span>
           </button>
-          <span v-if="!tags.length" class="tag-empty">{{ t("还没有任何标签") }}</span>
+          <span v-if="!tags.length" class="tag-empty">{{ t("library.tags-empty") }}</span>
         </div>
       </div>
     </div>`,

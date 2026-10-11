@@ -25,17 +25,17 @@ const MaintainPage = {
     <div class="app">
       <header class="topbar">
         <span class="brand-mark" aria-hidden="true"></span>
-        <span class="brand-name">{{ t("皮肤站") }}</span>
-        <span class="brand-sub">Maintain</span>
+        <span class="brand-name">{{ t("brand.site") }}</span>
+        <span class="brand-sub">{{ t("brand.sub-maintain") }}</span>
         <a class="back-link" href="/">
-          <svg class="icon"><use href="#i-back"/></svg>{{ t("回皮肤站") }}
+          <svg class="icon"><use href="#i-back"/></svg>{{ t("nav.back") }}
         </a>
-        <span class="chip">{{ t("{count} 个账号", { count: store.state.users.length }) }}</span>
+        <span class="chip">{{ t("maintain.count", { count: store.state.users.length }) }}</span>
         <span v-if="store.me" class="chip chip-user" :title="'UUID ' + store.me.uuid">
           {{ store.me.player_name }} · {{ store.roleLabel(store.me.role) }}
         </span>
         <LocaleSwitch/>
-        <button class="icon-btn" type="button" :title="t('退出登录')" @click="store.logout()">
+        <button class="icon-btn" type="button" :title="t('nav.signout')" @click="store.logout()">
           <svg class="icon"><use href="#i-logout"/></svg>
         </button>
       </header>
@@ -43,22 +43,22 @@ const MaintainPage = {
       <main class="m-body">
         <div class="m-wrap">
           <section v-if="store.state.denied" class="m-card m-denied">
-            <h2><svg class="icon"><use href="#i-shield"/></svg>{{ t("需要管理员身份") }}</h2>
-            <p>{{ t("当前身份组没有用户管理权限。") }}</p>
-            <a class="primary-btn" href="/">{{ t("回皮肤站") }}</a>
+            <h2><svg class="icon"><use href="#i-shield"/></svg>{{ t("maintain.admin-required") }}</h2>
+            <p>{{ t("maintain.no-permission") }}</p>
+            <a class="primary-btn" href="/">{{ t("nav.back") }}</a>
           </section>
 
           <!-- 身份由后端定：答复回来之前先别把表单画出来，否则非管理员会闪一下表单 -->
           <section v-else-if="store.state.loading" class="m-card">
-            <span class="m-sub">{{ t("载入中…") }}</span>
+            <span class="m-sub">{{ t("common.loading") }}</span>
           </section>
 
           <template v-else>
             <section class="m-card">
               <header class="m-card-head">
-                <h2><svg class="icon"><use href="#i-users"/></svg>{{ t("账号") }}</h2>
-                <span class="m-sub" v-if="store.state.loading">{{ t("载入中…") }}</span>
-                <span class="m-sub" v-else>{{ t("{count} 个", { count: store.state.users.length }) }}</span>
+                <h2><svg class="icon"><use href="#i-users"/></svg>{{ t("auth.account") }}</h2>
+                <span class="m-sub" v-if="store.state.loading">{{ t("common.loading") }}</span>
+                <span class="m-sub" v-else>{{ t("common.count", { count: store.state.users.length }) }}</span>
               </header>
               <UserTable/>
             </section>
@@ -74,7 +74,7 @@ const MaintainPage = {
 
 if (requireAuth()) {
   const app = createApp(MaintainPage);
-  installI18n(app, t("用户管理 · 皮肤站"));
+  installI18n(app, t("title.accounts"));
   app.mount("#app");
   window.__maintain = maintainStore; // 调试句柄，和主页面的 window.__skin 一个意思
 }

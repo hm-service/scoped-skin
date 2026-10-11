@@ -62,23 +62,23 @@ export const UploadPanel = {
       </div>
 
       <div class="form-row">
-        <span class="form-label">{{ t("标签") }}</span>
+        <span class="form-label">{{ t("upload.tags") }}</span>
         <div class="tag-field">
           <TagCombo :selected="store.state.selectedTags" :library="store.state.library"
                     @add="store.addTag" @remove="store.removeTag"/>
           <div class="tag-existing-list">
             <button v-for="entry in library" :key="entry.tag" type="button"
                     class="tag-chip ghost" :class="{ on: store.hasTag(entry.tag) }"
-                    :data-tag="entry.tag" @click="store.toggleTag(entry.tag)">
+                    @click="store.toggleTag(entry.tag)">
               <span>{{ entry.tag }}</span><span class="count">{{ entry.count }}</span>
             </button>
-            <span v-if="!library.length" class="tag-empty">{{ t("暂无标签，直接输入创建") }}</span>
+            <span v-if="!library.length" class="tag-empty">{{ t("upload.tags-empty") }}</span>
           </div>
         </div>
       </div>
 
       <label v-if="store.state.category === 'skin'" class="field field-model">
-        <span>{{ t("模型") }}</span>
+        <span>{{ t("upload.model") }}</span>
         <select v-model="store.state.model">
           <option v-for="option in MODEL_OPTIONS" :key="option.value" :value="option.value">
             {{ option.label }}
@@ -92,7 +92,7 @@ export const UploadPanel = {
         </button>
         <button v-if="store.canDeletePending" type="button" class="ghost-btn danger"
                 @click="store.removePending()">
-          <svg class="icon"><use href="#i-trash"/></svg>{{ t("删除") }}
+          <svg class="icon"><use href="#i-trash"/></svg>{{ t("action.delete") }}
         </button>
       </div>
     </form>`,

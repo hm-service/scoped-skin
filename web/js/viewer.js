@@ -16,7 +16,7 @@ const ANIMATION_FACTORIES = {
   fly: () => new skinview3d.FlyingAnimation(),
 };
 
-/** 渲染帧率上限。理由见 capFrameRate()。 */
+/** 渲染帧率上限。理由见 patchDrawLoop()。 */
 const MAX_FPS = 60;
 
 /**
@@ -41,7 +41,7 @@ const MAX_FPS = 60;
  *    （正面视图会平掉）；KEY_DISTANCE 取 60 左右，让方向在模型尺度上略有变化，正面也就有了
  *    一点上亮下暗的过渡。
  */
-const LAMBERT_1_OVER_PI = Math.PI; // 见上面第一条：intensity = 系数 × π
+const LAMBERT_RECIPROCAL = Math.PI; // 见上面第一条：intensity = 系数 × π（把着色器里的 1/π 乘回去）
 const AMBIENT = 0.6;
 const KEY = 0.46;
 const KEY_DIR = [-0.36, 0.52, 0.78]; // 相机坐标系：左、上、前
@@ -87,8 +87,8 @@ export class Preview3D {
     this.viewer.controls.maxPolarAngle = Math.PI * 0.82;
     this.viewer.autoRotate = true;
     this.viewer.autoRotateSpeed = 0.35;
-    this.viewer.globalLight.intensity = AMBIENT * LAMBERT_1_OVER_PI;
-    this.viewer.cameraLight.intensity = KEY * LAMBERT_1_OVER_PI;
+    this.viewer.globalLight.intensity = AMBIENT * LAMBERT_RECIPROCAL;
+    this.viewer.cameraLight.intensity = KEY * LAMBERT_RECIPROCAL;
     this.viewer.cameraLight.decay = 0;
     this.viewer.cameraLight.position.set(...KEY_DIR).normalize().multiplyScalar(KEY_DISTANCE);
     this.viewer.animation = ANIMATION_FACTORIES.idle();
@@ -202,7 +202,7 @@ export class Preview3D {
       .loadSkin(skin.texture_url, { model: MODEL_TYPES[skin.kind] })
       .then(() => this.applyLayers()) // loadSkin 会把 visible 重置为 true，这里补回来
       .catch(() => {
-        this.onError(t("皮肤贴图加载失败"));
+        this.onError(t("error.skin-texture"));
       });
   }
 
@@ -231,7 +231,7 @@ export class Preview3D {
       .loadCape(url, { makeVisible: false })
       .then(() => this.setBackEquipment(this.backEquipment))
       .catch(() => {
-        this.onError(t("披风贴图加载失败"));
+        this.onError(t("error.cape-texture"));
       });
   }
 

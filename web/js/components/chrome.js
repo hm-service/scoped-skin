@@ -12,8 +12,8 @@ export const TopBar = {
   template: `
     <header class="topbar">
       <span class="brand-mark" aria-hidden="true"></span>
-      <span class="brand-name">{{ t("皮肤站") }}</span>
-      <span class="brand-sub">{{ t("Minecraft Skin Library") }}</span>
+      <span class="brand-name">{{ t("brand.site") }}</span>
+      <span class="brand-sub">{{ t("brand.sub") }}</span>
       <span class="chip">{{ store.statsText }}</span>
       <span v-if="store.state.player" class="chip chip-user"
             :title="'UUID ' + store.state.player.uuid">
@@ -21,11 +21,11 @@ export const TopBar = {
         <b class="role-flag" :class="store.role">{{ store.roleLabel }}</b>
       </span>
       <a v-if="store.state.player?.role === 'admin'" class="icon-btn" href="/maintain"
-         :title="t('用户管理')">
+         :title="t('nav.accounts')">
         <svg class="icon"><use href="#i-users"/></svg>
       </a>
       <LocaleSwitch/>
-      <button class="icon-btn" type="button" :title="t('退出登录')" @click="store.logout()">
+      <button class="icon-btn" type="button" :title="t('nav.signout')" @click="store.logout()">
         <svg class="icon"><use href="#i-logout"/></svg>
       </button>
     </header>`,

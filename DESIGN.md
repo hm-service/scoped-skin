@@ -75,6 +75,8 @@
 
 界面文案与后端返回的文案都支持**简体中文**（`zh-Hans`，默认）与**英文**（`en`）两档。前端在每个请求上带 `Accept-Language` 头（值就是当前界面语言），后端按它挑文案、并在响应上回 `Content-Language`；选择存在浏览器本地，不跟账号走。Yggdrasil 那套错误文案是规范定死的英文，不翻译。
 
+两边用**同一套文案策略**：键是点号分层的符号名（`library.search-placeholder`、`valid.username.invalid`），每条同时给中英两栏 —— 后端 `i18n/i18n.go` 的 `catalog`，前端 `web/js/i18n-app.js` 与 `web/js/i18n-admin.js`（跨页共用的键只在 app 那份里定义，运行时合并成一张 catalog）。键写错不静默：后端 `T()` 与前端 `t()` 都原样返回键本身。两边各有一道自检：`go test ./i18n/` 守后端，`make i18n`（`tools/check-i18n.mjs`）守前端 —— 漏配、多配、缺栏、键名不合规范、同一个键在两份表里重复定义都会被拦下。
+
 ## 3. API
 
 ### 3.1. /
@@ -404,3 +406,29 @@ flowchart LR
 | 贴图管理自建，未实现规范的材质上传接口        | 上传流程需与本站的预检、标签、收藏联动                                                                | 角色属性不返回 `uploadableTextures`，第三方客户端无法直接修改材质             |
 | 每账号最多 8 个令牌，超出先吊销最旧的         | 规范要求服务端限制令牌数；内存表不能随登录次数无界增长                                                | 同一账号开第 9 个客户端时最早那个被静默登出，得重新 `authenticate`            |
 | 存活探针靠镜像里的 `curl` 执行                | podman 把 kube 的 httpGet 翻成在容器内执行的 `curl -f <url>`（失败即退出），装 curl 才能用 k8s 式探针 | 镜像多几个 MB 依赖                                                            |
+
+### 5.8. 用户事件流
+
+一个人从打开页面到改库，只走下面这一条路（细节见 [3.6](#36-api) 与 [5.1](#51-身份组)）：
+
+```mermaid
+flowchart TD
+  open["打开 / 或 /maintain"] --> has{"localStorage 里有 token？"}
+  has -->|没有| login["/auth：POST /api/auth/login<br/>Argon2id 恒定约 1 秒"]
+  has -->|有| req["每个请求带<br/>Authorization: Bearer + Accept-Language"]
+  login -->|"成功：token 与 player 存 localStorage"| req
+  login -->|失败| audit["审计：login 与写操作"]
+  req --> who["服务端：token → uuid → 现查库取 role"]
+  who --> gate{"闸门"}
+  gate -->|"读接口（匿名也放行）"| read["列表 · 标签 · 预览 · /asset/*"]
+  gate -->|"normal / admin"| write["收藏 · 换装 · 上传"]
+  gate -->|admin| manage["删除贴图 · /api/admin/*"]
+  gate -->|"401 / 403"| back["清 token 回 /auth"]
+  write --> audit
+  manage --> audit
+```
+
+- **进页面先问有没有 token**：没有就 `location.replace("/auth")`。读接口本身对匿名放行，但页面不给人浏览的机会 —— 要看得先有账号。
+- **身份组不当凭据用**：token 里不含角色，每次请求现查库；改 `role` 立即生效，旧 token 不作废但下一次请求就被挡。
+- **凭据变更即掉线**：管理员改了某账号的 uuid / 账号名 / 密码，该账号的 token 立刻失效，前端拿 `401` 清 token 回 `/auth`；改自己时也一样。
+- **写与失败都留痕**：登录尝试（含失败）与每一笔写操作各写一条审计（[5.4](#54-审计记录)）；登录失败不区分「账号不存在」与「密码错」。
