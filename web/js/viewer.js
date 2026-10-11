@@ -19,6 +19,34 @@ const ANIMATION_FACTORIES = {
 /** 渲染帧率上限。理由见 capFrameRate()。 */
 const MAX_FPS = 60;
 
+/**
+ * 光照。这段数值和 vendor 默认值（ambient 3 / point 0.6）都不同，理由如下，改之前先读完。
+ *
+ * 一、系数是「显示空间」的系数。skinview3d 的皮肤贴图没有标 sRGB，而合成器最后一道 FXAA
+ *    也没有做输出编码，所以整条链路实际等效于「贴图原始字节 × 光照系数」，跟 Minecraft
+ *    自己一样是在显示空间里乘光。着色器里 Lambert 的 BRDF 带 1/π，于是
+ *        亮度系数 = intensity / π
+ *    正面系数取满 1，模型正脸就和贴图本身、和列表里的 2D 缩略图完全一致，不会过曝也不会发灰。
+ *
+ * 二、cameraLight 必须把 decay 归零。它是挂在相机上的点光源，离模型约 52 个世界单位，
+ *    three 从 r155 起按物理方式衰减（intensity / d²），decay=2 时贡献约 1/2700 —— 等于没有，
+ *    这正是原来预览「六个面一样亮、完全没有体积」的原因。decay=0 表示强度不随距离衰减。
+ *
+ * 三、把灯从相机轴上挪到「左上前方」，六个面才会分成几档亮度。系数取
+ *    AMBIENT + KEY * cos ≈ 0.60 + 0.46 × 0.78 ≈ 0.96（正对光的面）、0.60（背光面），
+ *    与游戏里实体预览的明暗差接近。灯留在相机坐标系里而不是世界坐标系：预览是自动旋转的，
+ *    跟相机走才能保证任何角度下看得到的那一面都是亮的、暗面只出现在背光的一侧。
+ *
+ * 四、灯不能放太远。平行光下一个平面上的法线处处相同，正对着看时整张脸就是一个亮度
+ *    （正面视图会平掉）；KEY_DISTANCE 取 60 左右，让方向在模型尺度上略有变化，正面也就有了
+ *    一点上亮下暗的过渡。
+ */
+const LAMBERT_1_OVER_PI = Math.PI; // 见上面第一条：intensity = 系数 × π
+const AMBIENT = 0.6;
+const KEY = 0.46;
+const KEY_DIR = [-0.36, 0.52, 0.78]; // 相机坐标系：左、上、前
+const KEY_DISTANCE = 60; // 相机坐标系里的灯位（约等于默认视距），见上面第四条
+
 export class Preview3D {
   constructor(canvas, onError) {
     this.canvas = canvas;
@@ -45,8 +73,10 @@ export class Preview3D {
     this.viewer.controls.maxPolarAngle = Math.PI * 0.82;
     this.viewer.autoRotate = true;
     this.viewer.autoRotateSpeed = 0.35;
-    this.viewer.globalLight.intensity = 2.1;
-    this.viewer.cameraLight.intensity = 0.55;
+    this.viewer.globalLight.intensity = AMBIENT * LAMBERT_1_OVER_PI;
+    this.viewer.cameraLight.intensity = KEY * LAMBERT_1_OVER_PI;
+    this.viewer.cameraLight.decay = 0;
+    this.viewer.cameraLight.position.set(...KEY_DIR).normalize().multiplyScalar(KEY_DISTANCE);
     this.viewer.animation = ANIMATION_FACTORIES.idle();
 
     this.observer = new ResizeObserver(() => this.resize());
@@ -111,12 +141,6 @@ export class Preview3D {
       .catch(() => {
         this.onError(t("皮肤贴图加载失败"));
       });
-  }
-
-  applyLayers() {
-    const skin = this.viewer.playerObject.skin;
-    skin.visible = this.skinVisible;
-    skin.setOuterLayerVisible(this.outerVisible);
   }
 
   setSkinVisible(visible) {
