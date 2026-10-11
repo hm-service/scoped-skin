@@ -48,7 +48,7 @@ func TestAuditWritesStructuredRecords(t *testing.T) {
 		t.Fatalf("应当写下 2 条，实际 %d: %v", len(records), records)
 	}
 	first := records[0]
-	if first["msg"] != "audit" || first["event"] != "login" || first["ip"] != "203.0.113.9" || first["username"] != "steve" {
+	if first["msg"] != "audit" || first["event"] != "login" || first["client_ip"] != "203.0.113.9" || first["username"] != "steve" {
 		t.Fatalf("审计内容不对: %v", first)
 	}
 	stamp, ok := first["time"].(string)
@@ -69,7 +69,7 @@ func TestAuditWithoutExtraFields(t *testing.T) {
 	core.NewAudit().Write("login", "127.0.0.1", nil)
 
 	records := read()
-	if len(records) != 1 || records[0]["ip"] != "127.0.0.1" {
+	if len(records) != 1 || records[0]["client_ip"] != "127.0.0.1" {
 		t.Fatalf("审计记录不对: %v", records)
 	}
 }

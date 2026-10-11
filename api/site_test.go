@@ -57,7 +57,7 @@ func loggedIP(t *testing.T, records []map[string]any, path string) string {
 	t.Helper()
 	for _, record := range slices.Backward(records) {
 		if record["msg"] == "HTTP Request" && record["path"] == path {
-			ip, _ := record["ip"].(string)
+			ip, _ := record["client_ip"].(string)
 			return ip
 		}
 	}
