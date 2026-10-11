@@ -2,7 +2,7 @@
 
 `scoped-skin` 是一个 Go 实现的 Minecraft 皮肤站（标准库 `net/http` + `modernc.org/sqlite`）：单页提供贴图的浏览 / 收藏 / 上传与实时 3D 预览，并实现 Yggdrasil（authlib-injector 兼容）认证。前后端经 `go:embed` 编入同一静态二进制，运行时不依赖外部文件；界面与接口文案支持简体中文与英文。
 
-3D 预览使用 [skinview3d](https://github.com/bs-community/skinview3d)（UMD bundle，`<script>` 引入），界面基于 [Vue 3](https://vuejs.org/) 全局构建：状态集中于 `js/store.js`，视图为 `js/components/*`，模板在运行时编译，无构建步骤；两个库均置于 `web/vendor/`，运行时不请求外部 CDN。布局参考 [Blessing Skin Server](https://github.com/bs-community/blessing-skin-server)。
+3D 预览使用 [skinview3d](https://github.com/bs-community/skinview3d)（UMD bundle，`<script>` 引入），界面基于 [Vue 3](https://vuejs.org/) 全局构建：状态集中于 `js/store.js`，视图为 `js/components/*`，模板在运行时编译，无构建步骤；两个库均置于 `web/vendor/`，运行时不请求外部 CDN。布局参考 [Blessing Skin Server](https://github.com/bs-community/blessing-skin-server)。预览这一层对 skinview3d 做了哪些改动见 [3D 预览](#3d-预览对-skinview3d-的改动)。
 
 
 ![皮肤库](docs/screenshot-library.png)
@@ -22,6 +22,18 @@
 ![用户管理](docs/screenshot-maintain.png)
 
 ![登录页](docs/screenshot-auth.png)
+
+## 3D 预览对 skinview3d 的改动
+
+`web/vendor/skinview3d.bundle.js` 原样使用、不打补丁，差异全部在 `web/js/viewer.js` 这一层（逐条原因写在文件顶部注释里，动这些数值前先读）：
+
+- **省电两件**：给 vendor 自己的 `draw()` 套一层 60 fps 上限（动画与自动旋转都是按 Δt 推进的，压低帧率不会变慢），并按 `document.hidden` 暂停渲染 —— vendor 不看页面可见性，后台标签页会一直跑 RenderPass + FXAA。
+- **光照**：环境光 `0.6π`、主光 `0.46π`，并把 `cameraLight` 的 `decay` 归零、从相机轴挪到相机坐标系里的左上前方。这套链路（贴图未标 sRGB + 合成器不做输出编码 + Lambert 的 `1/π`）等效于在显示空间乘光，`intensity/π` 才是亮度系数。vendor 默认的 `ambient 3 ≈ π` 其实是在凑这个恒等（亮度基本对，只暗 4.5%），但它的主光是死的 —— 挂在相机上的点光源离模型 52 个世界单位，`1/d²` 下贡献约 1/2700，于是六个面一样亮、毫无体积；我们原来手写的 `2.1` 更是连亮度都只剩 0.67 倍。
+- **交互**：`enablePan` 打开、中键从 vendor 的 DOLLY 改成 PAN；平移有 20 个世界单位的软边界（拦住时 target 与相机一起回移，只钳 target 会改掉相机距离、看着像模型在缩小）；「重置视角」连 `controls.target` 一起归零，否则平移过之后会变成「站在原地看着别处」。
+- **状态**：`loadCape(..., { makeVisible: false })` 挡住 vendor 的自动切换，披风 / 鞘翅 / 隐藏三档自己管；`loadSkin` 会把 `visible` 置回 `true`，所以载入后补一次图层开关。
+- 取景参数（`fov 42`、`zoom 0.9`、20–90 的距离与极角上下限、自动旋转速度 0.35）也在这层设定，属于取舍而非改行为。
+
+这套改动靠的是覆盖实例上的 `draw` 与灯光 / 控制器字段，不改 vendor 文件；哪天升级 bundle 导致某个字段改名，表现是「退回 vendor 行为」（例如不再限帧、灯又变平），不会崩。逐条理由与实测数字见 DESIGN.md 的 §2.1（页面）。
 
 ## 快速开始
 

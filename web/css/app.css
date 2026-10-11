@@ -775,18 +775,8 @@ button { cursor: pointer; }
   min-height: 0;
   background: radial-gradient(58% 52% at 50% 36%, #ffffff 0%, #eaeff9 58%, #dbe2f1 100%);
 }
-.stage-view::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: 9%;
-  width: 44%;
-  height: 18px;
-  transform: translateX(-50%);
-  border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(22, 28, 45, .15), rgba(22, 28, 45, 0));
-  pointer-events: none;
-}
+/* 这里本来有一条 ::after 画的「接地阴影」，是个钉死在 bottom: 9% / 宽 44% 的椭圆：
+   不跟缩放、不跟旋转，也不跟中键平移，模型还没选中时它也在 —— 位置对不上的阴影比没有更假，删掉。 */
 #viewer { display: block; width: 100%; height: 100%; position: relative; z-index: 1; }
 
 .stage-hint {
