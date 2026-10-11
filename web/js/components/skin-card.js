@@ -3,40 +3,8 @@ import { renderPreview } from "../avatar.js";
 import { t } from "../i18n.js";
 import { modelShort, store, thumbnailFor } from "../store.js";
 import { shortId } from "../tags.js";
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "../vue.js";
+import { computed, onMounted, ref, watch } from "../vue.js";
 import { TagCapsule } from "./tag-capsule.js";
-
-/**
- * 全列表共用一份 IntersectionObserver：卡片滚到视口附近才画缩略图。
- * 每张卡片各建一个 observer 是几百个回调对象，没必要；这里用一张表按元素派发。
- */
-const pendingDraws = new Map();
-let drawObserver = null;
-
-function drawWhenNear(element, draw) {
-  if (!element) return () => {};
-  if (!drawObserver) {
-    drawObserver = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          const run = pendingDraws.get(entry.target);
-          pendingDraws.delete(entry.target);
-          drawObserver.unobserve(entry.target);
-          run?.();
-        }
-      },
-      // 提前一屏开画：滚下来时图上已经有了，不会看到空白卡片
-      { rootMargin: "300px 0px" },
-    );
-  }
-  pendingDraws.set(element, draw);
-  drawObserver.observe(element);
-  return () => {
-    pendingDraws.delete(element);
-    drawObserver.unobserve(element);
-  };
-}
 
 export const SkinCard = {
   name: "SkinCard",
@@ -55,15 +23,14 @@ export const SkinCard = {
 
     /**
      * 卡片上最多放四个 chip（两行），超出的进悬浮面板。
-     * 四个以内全显示；四个以上只显示前三个 + 「+N」，这样无论多少标签都是两行 —— 高度恒定，
-     * 列表的 content-visibility 估算才稳，将来真要换成窗口化列表也是现成的。
+     * 四个以内全显示；四个以上只显示前三个 + 「+N」，这样无论多少标签都是两行 —— 卡片高度
+     * 恒定（= .grid 的 --grid-row），虚拟列表按行高算滚动位置才准。
      */
     const shownTags = computed(() => {
       const tags = props.item.tags ?? [];
       return tags.length > 4 ? tags.slice(0, 3) : tags;
     });
     const hiddenTags = computed(() => (props.item.tags?.length ?? 0) - shownTags.value.length);
-    let stopDraw = () => {};
 
     async function draw() {
       failed.value = false;
@@ -76,11 +43,10 @@ export const SkinCard = {
       }
     }
 
-    onMounted(() => {
-      stopDraw = drawWhenNear(canvas.value, draw);
-    });
-    onBeforeUnmount(() => stopDraw());
-    // 模型换了要重画：这时卡片已经在视口里，不必再等观察器
+    // 挂上就画。列表本身已经虚拟化了（DOM 里只有视口附近那几十张），再套一层
+    // 「滚到跟前才画」既省不下多少，又会在窗口边缘漏画 —— 之前用 IntersectionObserver 时，
+    // 正好压在滚动视口底边上的那一行永远等不到回调，滚过去就是 5 张空白卡。
+    onMounted(draw);
     watch(() => props.item.kind, draw);
 
     return { store, canvas, failed, label, short, shownTags, hiddenTags };

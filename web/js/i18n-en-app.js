@@ -115,7 +115,7 @@ export const app = {
   "待上传": "Pending upload",
   "自动旋转": "Auto-rotate",
   "重置视角": "Reset view",
-  "拖拽旋转 · 滚轮缩放": "Drag to rotate · scroll to zoom",
+  "拖拽旋转 · 滚轮缩放 · 中键平移": "Drag to rotate · scroll to zoom · middle-drag to pan",
   "选一张皮肤开始预览": "Pick a skin to preview",
   "显示 / 隐藏皮肤": "Show / hide skin",
   "显示 / 隐藏外层": "Show / hide overlay",

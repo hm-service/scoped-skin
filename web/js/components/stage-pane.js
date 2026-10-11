@@ -75,7 +75,7 @@ export const StagePane = {
 
       <div class="stage-view">
         <canvas id="viewer" ref="canvas"></canvas>
-        <span class="stage-hint">{{ t("拖拽旋转 · 滚轮缩放") }}</span>
+        <span class="stage-hint">{{ t("拖拽旋转 · 滚轮缩放 · 中键平移") }}</span>
         <div v-if="store.stageEmpty" class="stage-empty">{{ t("选一张皮肤开始预览") }}</div>
       </div>
 

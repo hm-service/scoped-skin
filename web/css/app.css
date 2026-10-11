@@ -323,16 +323,30 @@ button { cursor: pointer; }
      每列反而越贴下限）。 */
   --grid-card: 123px;
   --grid-gap: 9px;
+  /* 行高（= 卡片高度）恒定，虚拟化就拿它做「第几行 ↔ 滚到哪」的换算，不用测量、不用前缀和 */
+  --grid-row: 212px;
 
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  padding: 2px;
+  scrollbar-width: thin;
+}
+
+/* 虚拟滚动：spacer 撑出全量行数的高度（决定滚动条长度），window 是绝对定位的渲染窗口，
+   用 translateY 挪到该出现的位置。窗口本身才是那个 grid（auto-fill 的列数由它的宽度算），
+   所以窗口的宽度必须跟着 spacer 走 —— 用 left/right: 0 而不是 width: 100%。 */
+.grid-spacer { position: relative; }
+.grid-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--grid-card), 1fr));
+  grid-auto-rows: var(--grid-row);
   gap: var(--grid-gap);
-  padding: 2px;
   align-content: start;
-  scrollbar-width: thin;
 }
 
 .card {
@@ -347,8 +361,8 @@ button { cursor: pointer; }
   border-radius: var(--radius-md);
   background: var(--paper);
   transition: transform .15s, border-color .15s, box-shadow .15s;
-  /* 高度必须恒定（缩略图 + 两行标签 + 一行信息）：屏外卡片不进渲染树，
-     恒定高度才让 contain-intrinsic-size 的估算准确、滚动条不抖 */
+  /* 高度必须恒定（缩略图 112 + 两行标签 46 + 一行信息 + 上下内边距 = 212，即 .grid 的 --grid-row）：
+     虚拟化按 --grid-row 算位置，行高一旦随内容漂移，滚动位置就会和渲染窗口对不上。 */
   content-visibility: auto;
   contain-intrinsic-size: auto 212px;
 }
@@ -367,7 +381,8 @@ button { cursor: pointer; }
   image-rendering: pixelated;
   filter: drop-shadow(0 6px 6px rgba(22, 28, 45, .16));
 }
-.card.cape .thumb { height: 98px; align-items: center; }
+/* 披风贴图矮（32 高），给它居中；高度仍与皮肤卡一致，行高才统一 */
+.card.cape .thumb { align-items: center; }
 
 /* 标签区固定两行：卡片上最多四个 chip（超过就换成 +N），剩下的进悬浮面板。
    width: 100% 是必须的：否则这个 wrap 容器会缩到内容宽度，百分比上限跟着缩，
@@ -476,7 +491,6 @@ button { cursor: pointer; }
   letter-spacing: .04em;
 }
 .card.builtin:hover .builtin-flag { background: var(--accent-soft); color: var(--accent-ink); }
-.card.cape { contain-intrinsic-size: auto 198px; }
 
 /* 卡片放不下的标签在悬浮面板里补全（固定定位，不会被列表的滚动容器裁掉） */
 .card-hover {

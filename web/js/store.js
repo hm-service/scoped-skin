@@ -11,7 +11,7 @@ import { t } from "./i18n.js";
 import * as roles from "./roles.js";
 import { hasTag, shortId } from "./tags.js";
 import { createToast } from "./toast.js";
-import { computed, nextTick, reactive, ref } from "./vue.js";
+import { computed, reactive, ref } from "./vue.js";
 
 /** 条目 kind → 接口里的模型值（模型已并进 kind，皮肤才有这一档）。 */
 const MODEL_LABELS = { "skin.steve": "steve", "skin.alex": "alex" };
@@ -107,6 +107,7 @@ function createStore() {
     uploadOver: false, // 拖到「上传新皮肤」按钮上
     pending: { file: null, name: "", size: 0, url: null, id: null, registered: null, checking: false, submitting: false, editing: false, error: "" },
     hover: { item: null, anchor: null }, // 卡片悬浮面板：显示放不下的那些标签
+    reveal: null, // 「把这张卡片滚进视野」的请求：{ id, nonce }（列表虚拟化后卡片不一定在 DOM 里，见 app.js）
     view: { animation: "idle", paused: false, rotate: true, skinVisible: true, outerVisible: true },
     toast: { message: "", kind: "info", visible: false },
   });
@@ -657,8 +658,9 @@ function createStore() {
       state.category = category;
       await refresh();
       select(item);
-      await nextTick();
-      document.querySelector(`#grid .card[data-id="${item.id}"]`)?.scrollIntoView({ block: "nearest" });
+      // 全量渲染时这里是 scrollIntoView，现在是虚拟列表：卡片不一定在 DOM 里，
+      // 交给视图层按「第几行」换算滚动位置
+      state.reveal = { id: item.id, nonce: (state.reveal?.nonce ?? 0) + 1 };
     } catch (error) {
       toastError(error.message);
     } finally {

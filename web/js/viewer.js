@@ -47,6 +47,12 @@ const KEY = 0.46;
 const KEY_DIR = [-0.36, 0.52, 0.78]; // 相机坐标系：左、上、前
 const KEY_DISTANCE = 60; // 相机坐标系里的灯位（约等于默认视距），见上面第四条
 
+/** three 的 MOUSE.PAN：中键按下时平移（vendor 默认中键是 DOLLY，推拉）。 */
+const MOUSE_PAN = 2;
+
+/** 平移的软边界（世界单位，模型高约 32）：target 离原点这么远就拦住，模型还不至于被推出画面。 */
+const MAX_PAN = 20;
+
 export class Preview3D {
   constructor(canvas, onError) {
     this.canvas = canvas;
@@ -66,7 +72,9 @@ export class Preview3D {
       zoom: 0.9,
       enableControls: true,
     });
-    this.viewer.controls.enablePan = false;
+    // 中键平移：vendor 默认 enablePan=false、中键给的是 DOLLY（推拉），两处都要改
+    this.viewer.controls.enablePan = true;
+    this.viewer.controls.mouseButtons.MIDDLE = MOUSE_PAN;
     this.viewer.controls.minDistance = 20;
     this.viewer.controls.maxDistance = 90;
     this.viewer.controls.minPolarAngle = Math.PI * 0.18;
@@ -82,11 +90,11 @@ export class Preview3D {
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(canvas.parentElement);
 
-    this.capFrameRate();
+    this.patchDrawLoop();
   }
 
   /**
-   * 给 vendor 自己的渲染循环加一道帧率上限。
+   * 给 vendor 自己的渲染循环加一道帧率上限，并顺手在每帧收一次平移的边界。
    *
    * skinview3d 的 SkinViewer 在构造时就挂上 rAF，每个显示帧都跑一遍 RenderPass + FXAA
    * 后处理，而且不看页面可见性 —— 对一张 64×64 的皮肤预览来说，120/144Hz 屏上是成倍白烧，
@@ -98,7 +106,7 @@ export class Preview3D {
    *
    * 哪天 vendor 把 draw 改了名，这层会失效并退回「每个显示帧都画」—— 只是费电，不会坏。
    */
-  capFrameRate() {
+  patchDrawLoop() {
     const viewer = this.viewer;
     const originalDraw = viewer.draw.bind(viewer);
     const interval = 1000 / MAX_FPS;
@@ -116,6 +124,7 @@ export class Preview3D {
       last += interval;
       if (now - last > interval) last = now;
       originalDraw(); // 原实现末尾会再挂上下一帧
+      this.clampPan();
     };
 
     const syncVisibility = () => {
@@ -131,6 +140,20 @@ export class Preview3D {
     const width = Math.max(1, Math.round(box.clientWidth));
     const height = Math.max(1, Math.round(box.clientHeight));
     this.viewer.setSize(width, height);
+  }
+
+  /**
+   * 平移的软边界：target 离原点超过 MAX_PAN 就把它拉回来。
+   * 拉的时候 target 与相机一起回移，只动 target 会连带改掉「相机到 target 的距离」——
+   * 一直拖着不放就会看见模型越缩越小。
+   */
+  clampPan() {
+    const controls = this.viewer.controls;
+    const length = controls.target.length();
+    if (length <= MAX_PAN) return;
+    const excess = controls.target.clone().multiplyScalar(1 - MAX_PAN / length);
+    controls.target.sub(excess);
+    this.viewer.camera.position.sub(excess);
   }
 
   /** @param {{texture_url: string, kind: string}} skin */
@@ -205,6 +228,8 @@ export class Preview3D {
   }
 
   resetPose() {
+    // 平移过之后 target 已经不在原点，只把相机放回去就成了「站在原地看着别处」
+    this.viewer.controls.target.set(0, 0, 0);
     this.viewer.resetCameraPose();
   }
 }
