@@ -50,5 +50,6 @@
 /docs/
 /README.md
 /DESIGN.md
-/k8s.scoped-skin.yaml
+/k8s.yaml
+/quadlet-kube.kube
 /justfile

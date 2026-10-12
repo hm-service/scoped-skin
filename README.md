@@ -71,7 +71,7 @@ just fmt         # go fmt ./...：只格式化本模块的包
 ```
 main.go  web.go            # 入口（环境变量 → 应用容器 → 路由 → 监听）；web.go 是站点外壳：页面路由表 + go:embed frontend/dist
 justfile  Dockerfile       # 项目命令：frontend / build / run / check / test / vet / fmt / clean；三段容器构建（前端 → Go → 运行时）
-k8s.scoped-skin.yaml       # podman kube play 用的 Pod + PVC + ConfigMap（含探针与资源上限）
+k8s.yaml quadlet-kube.kube # podman kube play 的 Pod + PVC + ConfigMap（探针、只读根、丢全部 capability）；systemd quadlet 模板（%p 取单元名）
 api/                       # HTTP 层：中间件（日志 / 并发 / 安全头 / 语言 / 体积上限）、探针、/asset/* 的贴图字节、站点 API、yggdrasil/（规范接口）；页面与静态资源不在这里
 app/                       # 应用容器：库 + 令牌表 + 会话 + 密钥 + 审计 + Argon2 闸门，及启动时的权限收紧
 core/                      # 纯逻辑：Argon2id、站点 token、内存会话、RSA、审计、文件权限、离线 UUID、校验
