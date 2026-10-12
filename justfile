@@ -26,7 +26,7 @@ frontend:
     cd frontend && pnpm install --frozen-lockfile && pnpm build
 
 # 造占位 frontend/dist/STUB，让 go:embed 能编译；占位版跑起来页面是 500（没有 index.html）
-stub-dist:
+frontend-stub:
     @mkdir -p frontend/dist
     @test -f frontend/dist/index.html || touch frontend/dist/STUB
 
@@ -52,7 +52,7 @@ check: vet test
     cd frontend && pnpm typecheck
 
 # 跑全部测试（没有前端产物就先造占位，Go 的测试不需要真前端）
-test: stub-dist
+test: frontend-stub
     go test ./... -count=1
 
 # 提交并推送：just push "提交信息"（没有改动就只打印一行，不提交也不推）
@@ -68,7 +68,7 @@ push message:
     git push
 
 # go vet
-vet: stub-dist
+vet: frontend-stub
     go vet ./...
 
 # go fmt 本模块的包
