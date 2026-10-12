@@ -6,6 +6,10 @@
 
 set shell := ["bash", "-uc"]
 
+# 让 recipe 拿到位置参数：提交信息是用户文本，走 {{ }} 插值会被 shell 再解释一遍
+# （带引号、$ 或反引号的消息会被改样），所以 push 用 "$1"。
+set positional-arguments
+
 DIST := ".dist"
 DIST_OS := env("DIST_OS", "linux")
 ARCHS := env("ARCHS", "amd64 arm64")
@@ -50,6 +54,18 @@ check: vet test
 # 跑全部测试（没有前端产物就先造占位，Go 的测试不需要真前端）
 test: stub-dist
     go test ./... -count=1
+
+# 提交并推送：just push "提交信息"（没有改动就只打印一行，不提交也不推）
+push message:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    git add -A
+    if git diff --cached --quiet; then
+        echo "没有改动，跳过提交与推送"
+        exit 0
+    fi
+    git commit -m "$1"
+    git push
 
 # go vet
 vet: stub-dist
