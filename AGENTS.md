@@ -29,6 +29,7 @@
 - 后端采用 Go，HTTP 处理只用标准库 `net/http`。
 - 存储若需要使用 SQLite，采用 `modernc.org/sqlite`（纯 Go，`CGO_ENABLED=0`）。
 - 后端负责托管前端静态文件：`go:embed` 把 `frontend/dist` 编入，嵌入声明写在仓库根的 `web.go`。
+- 静态文件托管并发量默认通过信号量限制为 `MAX_STATIC_CONCURRENCY`，API 路由（包括 /readyz 和 /livez）默认通过信号量限制为 `MAX_API_CONCURRENCY`，两者使用独立槽位。
 
 **创建模板项目**:
 
@@ -84,6 +85,8 @@ cd frontend && pnpm install
 | `k8s.yaml` `quadlet-kube.kube` | 部署：Pod + PVC + ConfigMap；podman kube play / systemd 模板                |
 | `DESIGN.md`                    | 有用户主导编写的设计：包括部署、页面、接口、表结构、安全模型等方面          |
 
+- 除非 `DESIGN.md` 为空或用户明确要求修改，否则不应自行改动，仅做汇报与建议。
+
 ### 2.2. 点号目录（示例）
 
 点号开头的目录多为本地状态与产物，只有 `.github/` 是例外（属于源码、入库）：
@@ -109,15 +112,17 @@ cd frontend && pnpm install
 
 通常应有以下通用环境变量
 
-| 变量名            | 示例（默认值）       | 说明                     |
-| ----------------- | -------------------- | ------------------------ |
-| `DATA_DIR`        | /data                | 数据存储目录             |
-| `TZ`              | Asia/Shanghai        | 时区信息                 |
-| `HOST`            | 127.0.0.1            | 服务监听主机             |
-| `PORT`            | 8080                 | 服务监听端口             |
-| `READYZ_TOKEN`    | `your_readyz_token`  | /readyz?token 端点 token |
-| `TRUSTED_PROXIES` | 127.0.0.1/32,::1/128 | 反代可信源               |
-| `GOMEMLIMIT`      | 128MiB               | Go GC 阈值               |
+| 变量名                   | 示例（默认值）       | 说明                                         |
+| ------------------------ | -------------------- | -------------------------------------------- |
+| `DATA_DIR`               | /data                | 数据存储目录（如果有数据存储）               |
+| `TZ`                     | Asia/Shanghai        | 时区信息                                     |
+| `HOST`                   | 127.0.0.1            | 服务监听主机                                 |
+| `PORT`                   | 8080                 | 服务监听端口                                 |
+| `READYZ_TOKEN`           | your_readyz_token    | /readyz?token 端点 token                     |
+| `TRUSTED_PROXIES`        | 127.0.0.1/32,::1/128 | 反代可信源                                   |
+| `MAX_API_CONCURRENCY`    | 128                  | API 路由（包括 /readyz 与 /livez）最大并发量 |
+| `MAX_STATIC_CONCURRENCY` | 64                   | 静态文件服务最大并发量                       |
+| `GOMEMLIMIT`             | 128MiB               | Go GC 阈值                                   |
 
 ### 3.2. 注释
 

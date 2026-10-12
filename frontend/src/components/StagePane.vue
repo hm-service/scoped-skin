@@ -10,13 +10,30 @@ import { Preview3D } from "@/viewer";
 const canvas = ref<HTMLCanvasElement | null>(null);
 const animations = ANIMATIONS;
 
+/**
+ * 在途加载的序号：鼠标扫过一串卡片时，先发起的那次加载可能后返回，纹理会被过时的图盖掉。
+ * 发现自己是过时的就按当前状态重来一次（重来的那次带着新序号，收敛）。
+ */
+let skinToken = 0;
+let capeToken = 0;
+
 function loadSkin(): void {
+  const viewer = viewerRef.current;
   const skin = store.stageSkin;
-  if (viewerRef.current && skin) viewerRef.current.setSkin(skin);
+  if (!viewer || !skin) return;
+  const token = ++skinToken;
+  void viewer.setSkin(skin).then(() => {
+    if (token !== skinToken) loadSkin();
+  });
 }
 
 function loadCape(): void {
-  viewerRef.current?.setCape(store.stageCapeUrl);
+  const viewer = viewerRef.current;
+  if (!viewer) return;
+  const token = ++capeToken;
+  void viewer.setCape(store.stageCapeUrl).then(() => {
+    if (token !== capeToken) loadCape();
+  });
 }
 
 onMounted(() => {

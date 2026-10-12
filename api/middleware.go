@@ -29,22 +29,22 @@ func (rec *statusRecorder) Write(body []byte) (int, error) {
 	return rec.ResponseWriter.Write(body)
 }
 
-// MaxConcurrentRequests 是 `/api/*` 的并发上限（DESIGN.md 5.3）：超出的请求在闸门外排队，
-// 免得 goroutine、SQLite 连接与 Argon2 一起被放开。
-const MaxConcurrentRequests = 128
+// 两半各有一个独立闸门，槽位数可被环境变量覆盖（AGENTS.md 的环境变量约定）：
+// API 那一半管住 goroutine / SQLite / Argon2，静态那一半只防止一次页面加载把内嵌文件
+// 同时读爆 —— 两边各占各自的槽位，谁也不排谁的队。
+const (
+	DefaultAPIConcurrency    = 128
+	DefaultStaticConcurrency = 64
+)
 
-// Concurrency 用一个固定容量的信号量把同时在处理的请求卡在上限以内。
+// Concurrency 用一个固定容量的信号量把同时在处理的请求卡在 limit 以内。
 // 排队的请求在客户端断开后直接放行，不再占用槽位。
 //
-// 只管 `/api/*`：页面、`/assets/*` 与 `/asset/*` 都不吃 Argon2，也没有每请求的稀缺资源，
-// 让它们直接走 —— 否则浏览器并发拉几张图就能把 128 个槽位占满。
-func Concurrency(next http.Handler) http.Handler {
-	slots := make(chan struct{}, MaxConcurrentRequests)
+// 这里不认路径：套在谁身上就卡谁。API 与静态各套一层、各用一份槽位，接线在 main.go
+// （NewHandler 只服务接口，所以自己套 API 那一层默认值）。
+func Concurrency(limit int, next http.Handler) http.Handler {
+	slots := make(chan struct{}, limit)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/") {
-			next.ServeHTTP(w, r)
-			return
-		}
 		select {
 		case slots <- struct{}{}:
 		case <-r.Context().Done():

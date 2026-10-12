@@ -13,12 +13,12 @@ import (
 	"scoped-skin/api"
 )
 
-// DESIGN.md 5.3：/api/* 共用 128 个并发槽位，超出的排队。
+// DESIGN.md 5.3：闸门把同时在处理的请求卡在槽位数以内，超出的排队。
 func TestConcurrencyCapsInFlightRequests(t *testing.T) {
 	t.Parallel()
 
 	var inFlight, peak atomic.Int64
-	handler := api.Concurrency(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := api.Concurrency(api.DefaultAPIConcurrency, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		current := inFlight.Add(1)
 		for {
 			previous := peak.Load()
@@ -30,7 +30,7 @@ func TestConcurrencyCapsInFlightRequests(t *testing.T) {
 		inFlight.Add(-1)
 	}))
 
-	total := api.MaxConcurrentRequests + 32
+	total := api.DefaultAPIConcurrency + 32
 	var group sync.WaitGroup
 	for range total {
 		group.Go(func() {
@@ -39,8 +39,8 @@ func TestConcurrencyCapsInFlightRequests(t *testing.T) {
 	}
 	group.Wait()
 
-	if got := peak.Load(); got > api.MaxConcurrentRequests {
-		t.Fatalf("同时在处理的请求峰值 = %d，超过上限 %d", got, api.MaxConcurrentRequests)
+	if got := peak.Load(); got > api.DefaultAPIConcurrency {
+		t.Fatalf("同时在处理的请求峰值 = %d，超过上限 %d", got, api.DefaultAPIConcurrency)
 	} else if got < 2 {
 		t.Fatalf("峰值只有 %d，并发没跑起来，这个用例说明不了问题", got)
 	}
@@ -51,16 +51,16 @@ func TestConcurrencyGivesUpWhenClientGoesAway(t *testing.T) {
 	t.Parallel()
 
 	block := make(chan struct{})
-	release := make(chan struct{}, api.MaxConcurrentRequests)
-	handler := api.Concurrency(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	release := make(chan struct{}, api.DefaultAPIConcurrency)
+	handler := api.Concurrency(api.DefaultAPIConcurrency, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		release <- struct{}{}
 		<-block
 	}))
 
-	for range api.MaxConcurrentRequests {
+	for range api.DefaultAPIConcurrency {
 		go handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/library", nil))
 	}
-	for range api.MaxConcurrentRequests {
+	for range api.DefaultAPIConcurrency {
 		<-release
 	}
 
@@ -81,40 +81,39 @@ func TestConcurrencyGivesUpWhenClientGoesAway(t *testing.T) {
 	close(block)
 }
 
-// 页面与静态资源不占槽位：槽位被 /api/* 占满时它们照样立刻过。
-func TestConcurrencySkipsStaticPaths(t *testing.T) {
+// 闸门不认路径：套在谁身上就卡谁（API 与静态各套一层是 main.go 的事）。
+// 这里用一条以前会被跳过的路径（"/"）证明它同样要排队。
+func TestConcurrencyCountsEveryPathItWraps(t *testing.T) {
 	t.Parallel()
 
 	block := make(chan struct{})
-	release := make(chan struct{}, api.MaxConcurrentRequests)
-	handler := api.Concurrency(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/") {
-			return // 非 /api/* 的请求本来就该直接过
-		}
-		release <- struct{}{}
+	// 两个请求都会走进处理函数，信号通道留够容量，免得第二个卡在发信号这一步
+	entered := make(chan struct{}, 2)
+	handler := api.Concurrency(1, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		entered <- struct{}{}
 		<-block
 	}))
 
-	for range api.MaxConcurrentRequests {
-		go handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/library", nil))
-	}
-	for range api.MaxConcurrentRequests {
-		<-release
+	go handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	<-entered
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/assets/app-abc.js", nil))
+	}()
+	select {
+	case <-done:
+		t.Fatal("槽位被占着，第二个请求不该过")
+	case <-time.After(100 * time.Millisecond):
 	}
 
-	for _, path := range []string{"/", "/assets/app-abc.js", "/asset/abc", "/livez"} {
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
-		}()
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-			t.Fatalf("%s 不该被并发闸门挡住（槽位只留给 /api/*）", path)
-		}
-	}
 	close(block)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("槽位空出来后排队请求应当立刻过")
+	}
 }
 
 // 访问日志不记纯静态与存活探针（噪音），但接口照记。页面走的是同一层中间件，

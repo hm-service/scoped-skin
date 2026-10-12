@@ -231,11 +231,21 @@ function createStore() {
     return uploading.value && url ? url : null;
   });
 
-  /** 右侧 3D 正在预览待上传的那张图（而不是库里选中的那张）。 */
+  /**
+   * 鼠标停在哪张卡上，舞台上就预览哪张 —— 只读，不动选中、更不装备。
+   * 三个优先级从高到低：待上传的那张 > 鼠标停着的那张 > 库里选中的那张。
+   */
+  const hovered = computed(() => state.hover.item);
+
+  /** 右侧 3D 正在预览的皮肤（可能是待上传的、鼠标停着的，或选中的那张）。 */
   const stageSkin = computed<StageSkin | null>(() => {
     const url = pendingUrl.value;
     if (url && state.category === "skin") {
       return { texture_url: url, kind: pendingKind.value };
+    }
+    const item = hovered.value;
+    if (item && item.category === "skin") {
+      return { texture_url: item.texture_url, kind: item.kind };
     }
     return state.skin ? { texture_url: state.skin.texture_url, kind: state.skin.kind } : null;
   });
@@ -244,12 +254,26 @@ function createStore() {
   const stageCapeUrl = computed<string | null>(() => {
     const url = pendingUrl.value;
     if (url && state.category === "cape") return url;
+    const item = hovered.value;
+    if (item && item.category === "cape") return item.texture_url;
     return state.cape ? state.cape.texture_url : null;
   });
 
-  /** 背面显示：披风 / 鞘翅 / 隐藏（null）；一张贴图都没有时只能隐藏。 */
-  const stageBackEquipment = computed<BackEquipment>(() => (stageCapeUrl.value ? state.backEquipment : null));
+  /**
+   * 背面显示：披风 / 鞘翅 / 隐藏（null）；一张贴图都没有时只能隐藏。
+   * 鼠标停在披风卡上时，隐藏档当成披风（不然预览看不见），披风与鞘翅档照用户选的来
+   * —— 鞘翅用的也是这张贴图，展示方式不该被预览冲掉。
+   */
+  const stageBackEquipment = computed<BackEquipment>(() => {
+    if (!stageCapeUrl.value) return null;
+    if (hovered.value?.category !== "cape") return state.backEquipment;
 
+    let equipment: BackEquipment = state.backEquipment;
+    if (equipment === null) equipment = "cape";
+    return equipment;
+  });
+
+  /** 舞台顶部那排徽标跟着预览走：显示哪张就说哪张的模型与标签。 */
   const stage = computed(() => {
     if (pendingUrl.value) {
       return {
@@ -259,12 +283,13 @@ function createStore() {
         fallback: t("preview.no-tags"),
       };
     }
-    if (state.skin) {
+    const shown = hovered.value ?? state.skin;
+    if (shown) {
       return {
         live: false,
-        model: modelLabel(state.skin),
-        tags: [...(state.skin.tags ?? [])],
-        fallback: shortId(state.skin),
+        model: modelLabel(shown),
+        tags: [...(shown.tags ?? [])],
+        fallback: shortId(shown),
       };
     }
     return { live: false, model: "", tags: [], fallback: t("preview.no-skin") };

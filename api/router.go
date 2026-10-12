@@ -18,19 +18,19 @@ type Server struct {
 }
 
 // NewHandler 是只含接口的完整处理器：中间件 + NewMux，供只关心接口的调用方使用
-// （测试、或者将来换一个站点外壳）。页面与静态资源不在这里。
+// （测试、或者将来换一个站点外壳）。页面与静态资源不在这里，所以并发闸门只套 API 那一层，
+// 用默认槽位数；main.go 那棵树会按环境变量给两半各套一层。
 func NewHandler(instance *app.App) http.Handler {
-	return Middleware(instance, NewMux(instance))
+	return Middleware(instance, Concurrency(DefaultAPIConcurrency, NewMux(instance)))
 }
 
-// Middleware 给任意处理器套上站点的通用中间件：访问日志 + 并发闸门 + 安全响应头 +
-// 语言协商 + 请求体上限。并发闸门排在日志里头，所以访问日志里的耗时含排队时间；语言要排在
-// 上限前头，那道闸回的错误文案也得跟着请求语言走。
+// Middleware 给任意处理器套上站点的通用中间件：访问日志 + 安全响应头 + 语言协商 +
+// 请求体上限。语言要排在上限前头，那道闸回的错误文案也得跟着请求语言走。
 //
+// 并发闸门不在这里：API 与静态各是一个独立的闸门（见 Concurrency），由接线处各套一层。
 // 站点外壳（根目录 web.go）与接口共用这一套，顺序只在这里定义一次。
 func Middleware(instance *app.App, next http.Handler) http.Handler {
-	return Logging(instance.ClientIP,
-		Concurrency(SecurityHeaders(WithLanguage(LimitBody(next)))))
+	return Logging(instance.ClientIP, SecurityHeaders(WithLanguage(LimitBody(next))))
 }
 
 type route struct {

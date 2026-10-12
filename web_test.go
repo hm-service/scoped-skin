@@ -10,7 +10,9 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
+	"scoped-skin/api"
 	"scoped-skin/api/yggdrasil"
 	"scoped-skin/internal/testenv"
 )
@@ -146,10 +148,36 @@ func TestSiteMissingPageIsServerError(t *testing.T) {
 	}
 }
 
+// defaultLimits 是正常启动时的槽位数；要验闸门本身时才另外造一份。
+func defaultLimits() concurrencyLimits {
+	return concurrencyLimits{api: api.DefaultAPIConcurrency, static: api.DefaultStaticConcurrency}
+}
+
+// 两半各用一份槽位：静态那半给 0 个槽位时，页面会一直排队，而 API 那半照常放行。
+func TestRootHandlerGivesEachHalfItsOwnGate(t *testing.T) {
+	instance := testenv.New(t)
+	handler := newRootHandler(instance, testSite(), concurrencyLimits{api: 1, static: 0})
+
+	page := make(chan struct{})
+	go func() {
+		defer close(page)
+		testenv.Do(handler, http.MethodGet, "/", nil, "")
+	}()
+	select {
+	case <-page:
+		t.Fatal("静态那半是 0 个槽位，却把页面放过去了")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	if recorder := testenv.Do(handler, http.MethodGet, "/livez", nil, ""); recorder.Code != http.StatusOK {
+		t.Fatalf("/livez = %d，想要 200（API 那半有自己的槽位）", recorder.Code)
+	}
+}
+
 // 接线：页面归站点外壳、/api/* 与探针归 api 包，共用中间件套在最外层。
 func TestRootHandlerWiresSiteAndApi(t *testing.T) {
 	instance := testenv.New(t)
-	handler := newRootHandler(instance, testSite())
+	handler := newRootHandler(instance, testSite(), defaultLimits())
 
 	page := testenv.Do(handler, http.MethodGet, "/", nil, "")
 	if page.Code != http.StatusOK {
@@ -183,7 +211,7 @@ func TestRootHandlerWiresSiteAndApi(t *testing.T) {
 // 访问日志在接线后的行为：页面照记，/assets/* 与 /asset/* 不记（与中间件的跳过规则一致）。
 func TestRootHandlerAccessLog(t *testing.T) {
 	instance := testenv.New(t)
-	handler := newRootHandler(instance, testSite())
+	handler := newRootHandler(instance, testSite(), defaultLimits())
 
 	var buffer bytes.Buffer
 	previous := slog.Default()
