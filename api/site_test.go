@@ -660,18 +660,11 @@ func TestAdminUsers(t *testing.T) {
 	}
 }
 
-func TestPagesAndProbes(t *testing.T) {
+func TestProbesAndAsset(t *testing.T) {
 	instance, handler := newSite(t)
 	token := testenv.Token(t, instance, "admin")
 
-	index := testenv.Do(handler, http.MethodGet, "/", nil, "")
-	if index.Code != http.StatusOK {
-		t.Fatalf("主页状态码 = %d，想要 200", index.Code)
-	}
-	if got := index.Header().Get("X-Authlib-Injector-API-Location"); got != api.YggdrasilLocation {
-		t.Errorf("X-Authlib-Injector-API-Location = %q，想要 %q", got, api.YggdrasilLocation)
-	}
-
+	// 页面由站点外壳负责（根目录 web.go），这里只测接口这一半：探针与贴图字节。
 	if recorder := testenv.Do(handler, http.MethodGet, "/livez", nil, ""); recorder.Code != http.StatusOK {
 		t.Errorf("/livez 状态码 = %d，想要 200", recorder.Code)
 	}
@@ -804,11 +797,12 @@ func TestLanguageNegotiation(t *testing.T) {
 
 // ── 公网部署相关的加固点（见 DESIGN.md 第 5 节） ────────────────────────────────
 
-// 三个静态安全头要在所有响应上都出现（CSS/JS、JSON、图片一视同仁）。
+// 三个静态安全头要在所有响应上都出现（JSON、图片、探针一视同仁）。
+// 页面与 /assets/* 上的同一份头由站点外壳那边测（根目录 web_test.go）—— 中间件是同一层。
 func TestSecurityHeaders(t *testing.T) {
 	_, handler := newSite(t)
 
-	for _, path := range []string{"/", "/livez", "/static/js/app.js"} {
+	for _, path := range []string{"/livez", "/api/nope", "/readyz"} {
 		recorder := testenv.Do(handler, http.MethodGet, path, nil, "")
 		header := recorder.Header()
 		if header.Get("X-Content-Type-Options") != "nosniff" {
@@ -820,36 +814,6 @@ func TestSecurityHeaders(t *testing.T) {
 		if header.Get("X-Frame-Options") != "DENY" {
 			t.Errorf("%s: X-Frame-Options = %q", path, header.Get("X-Frame-Options"))
 		}
-	}
-}
-
-// 静态资源只认具体文件：目录不给列表（不然内嵌文件的清单就摊开了）。
-func TestStaticFilesHaveNoDirectoryListing(t *testing.T) {
-	_, handler := newSite(t)
-
-	recorder := testenv.Do(handler, http.MethodGet, "/static/js/app.js", nil, "")
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("取具体文件状态码 = %d", recorder.Code)
-	}
-	if contentType := recorder.Header().Get("Content-Type"); !strings.Contains(contentType, "javascript") {
-		t.Errorf("Content-Type = %q", contentType)
-	}
-
-	for _, path := range []string{"/static/", "/static/js/", "/static/js", "/static/nope.js"} {
-		recorder := testenv.Do(handler, http.MethodGet, path, nil, "")
-		if recorder.Code != http.StatusNotFound {
-			t.Errorf("%s 状态码 = %d，想要 404", path, recorder.Code)
-		}
-		if strings.Contains(recorder.Body.String(), "app.js") {
-			t.Errorf("%s 回了个目录列表: %s", path, recorder.Body.String())
-		}
-	}
-
-	// 路径穿越：ServeMux 先按清理后的路径回 307，跟过去也只会落到普通页面；这里只要求
-	// 「不是带着内容 200」，不会从内嵌文件系统里读出别的东西。
-	recorder = testenv.Do(handler, http.MethodGet, "/static/../../etc/passwd", nil, "")
-	if recorder.Code == http.StatusOK && recorder.Body.Len() > 0 {
-		t.Fatalf("路径穿越回了个 200：%s", recorder.Body.String())
 	}
 }
 
@@ -880,30 +844,30 @@ func TestProbes(t *testing.T) {
 }
 
 // DESIGN.md 5.5：只有对端在 TRUSTED_PROXIES 里时才认反代头，访问日志里的 IP 跟着变。
-// 这里用 /auth 而不是 /livez —— 后者与静态资源刻意不写访问日志（DESIGN.md 1.3）。
+// 这里用 /readyz 而不是 /livez —— 后者与静态资源刻意不写访问日志（DESIGN.md 1.3）。
 func TestClientIPFromTrustedProxy(t *testing.T) {
 	instance := testenv.NewWith(t, func(cfg *app.Config) { cfg.TrustedProxies = "192.0.2.1/32" })
 	handler := api.NewHandler(instance)
 
 	read := captureLogs(t)
-	request := httptest.NewRequest(http.MethodGet, "/auth", nil)
+	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	request.RemoteAddr = "192.0.2.1:54321" // httptest 的默认对端，正好被标成可信
 	request.Header.Set("X-Forwarded-For", "198.51.100.7")
 	handler.ServeHTTP(httptest.NewRecorder(), request)
 
-	if ip := loggedIP(t, read(), "/auth"); ip != "198.51.100.7" {
+	if ip := loggedIP(t, read(), "/readyz"); ip != "198.51.100.7" {
 		t.Fatalf("可信代理下日志里的 ip = %q，想要 198.51.100.7", ip)
 	}
 
 	// 对端不可信（默认配置）时，伪造的 XFF 一律不算数
 	_, plain := newSite(t)
 	read = captureLogs(t)
-	request = httptest.NewRequest(http.MethodGet, "/auth", nil)
+	request = httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	request.RemoteAddr = "203.0.113.9:54321"
 	request.Header.Set("X-Forwarded-For", "198.51.100.7")
 	plain.ServeHTTP(httptest.NewRecorder(), request)
 
-	if ip := loggedIP(t, read(), "/auth"); ip != "203.0.113.9" {
+	if ip := loggedIP(t, read(), "/readyz"); ip != "203.0.113.9" {
 		t.Fatalf("不可信对端下日志里的 ip = %q，想要 203.0.113.9", ip)
 	}
 }

@@ -9,23 +9,24 @@ import (
 	"scoped-skin/httpx"
 )
 
-// aliasPrefix 是挂在站点根上的 Yggdrasil 前缀（DESIGN.md 3.1 的发现头指向它）。
-const aliasPrefix = "/api/yggdrasil"
+// AliasPrefix 是挂在站点根上的 Yggdrasil 前缀（DESIGN.md 3.1 的发现头指向它）。
+// 站点外壳（根目录 web.go）给首页发 X-Authlib-Injector-API-Location 时也用它。
+const AliasPrefix = "/api/yggdrasil"
 
 // 每个端点除了「METHOD /path」还额外注册一条同路径、不限方法的规则：Go 1.22 起
 // ServeMux 会挑更具体的那条，于是方法不匹配时能按规范回 JSON 的 405，而不是
 // ServeMux 默认的纯文本。
 func (s *Server) Register(mux *http.ServeMux) {
 	handle := func(method, path string, handler http.HandlerFunc) {
-		mux.HandleFunc(method+" "+aliasPrefix+path, handler)
-		mux.HandleFunc(aliasPrefix+path, methodNotAllowed)
+		mux.HandleFunc(method+" "+AliasPrefix+path, handler)
+		mux.HandleFunc(AliasPrefix+path, methodNotAllowed(method))
 	}
 
 	// 根接口：元数据。带不带结尾斜杠都认。
-	mux.HandleFunc("GET "+aliasPrefix, s.handleMeta)
-	mux.HandleFunc("GET "+aliasPrefix+"/{$}", s.handleMeta)
-	mux.HandleFunc(aliasPrefix, methodNotAllowed)
-	mux.HandleFunc(aliasPrefix+"/{$}", methodNotAllowed)
+	mux.HandleFunc("GET "+AliasPrefix, s.handleMeta)
+	mux.HandleFunc("GET "+AliasPrefix+"/{$}", s.handleMeta)
+	mux.HandleFunc(AliasPrefix, methodNotAllowed(http.MethodGet))
+	mux.HandleFunc(AliasPrefix+"/{$}", methodNotAllowed(http.MethodGet))
 
 	handle(http.MethodPost, "/authserver/authenticate", s.handleAuthenticate)
 	handle(http.MethodPost, "/authserver/refresh", s.handleRefresh)
@@ -40,7 +41,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	handle(http.MethodPost, "/api/profiles/minecraft", s.handleProfiles)
 
 	// 前缀下认不出的路径：按规范回 JSON 404
-	mux.HandleFunc(aliasPrefix+"/", notFound)
+	mux.HandleFunc(AliasPrefix+"/", notFound)
 }
 
 // handleMeta 是规范的「API 元数据获取」，也就是启动器最先拉的那份元数据。

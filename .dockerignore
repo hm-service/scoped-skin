@@ -1,31 +1,54 @@
-# 约定：本地 / 临时目录一律以 . 开头（.github 是唯一例外，它是真正的源码）
+# 约定：本地 / 临时目录一律以 . 开头（.github/ 是唯一例外，它是真正的源码）
+#
+# 注意：这里排掉的路径若被 go:embed 引用，镜像里就会缺文件、编译失败。前端产物不在此列 ——
+# 它由 Dockerfile 的第一个阶段现构建再 COPY 进源码树。
 
-# 构建产物（make build / make dist 输出到 .dist/；不进构建上下文）
+# 版本控制与仓库元数据
+/.git/
+/.github/
+/.gitignore
+/.dockerignore
+
+# 构建产物（just build 的输出都在 .dist/；不进构建上下文）
 /.dist/
-/scoped-skin
-*.test
 
 # Go 缓存（默认在 $HOME；万一临时重定向到仓库里，也别打进镜像）
-/.go-mod-cache/
 /.go-build/
+/.go-mod-cache/
 
-# 运行时数据（贴图库 + 索引 + 审计日志 + RSA 密钥），首次启动会自动重建
+# 运行时数据（数据库含 -wal / -shm、密钥等），首次启动自动重建
 /.data/
 /.data_sample/
 
-# 参考项目（本地 clone，不纳入本仓库）
+# 前端：依赖与构建产物都在镜像里自己生成，宿主机的这两份不进上下文
+# （frontend/ 的源码要进 —— 第一个阶段得靠它构建）
+/frontend/node_modules/
+/frontend/dist/
+
+# 参考项目（本地 clone）
 /.ref/
 /.blessing-skin-server/
 
-# 验证截图
-/.shots/
-
-# Python 原型（已归档：Go 版重写前的实现，只作参考，不再维护）
+# Python 原型（已归档，只作参考）
 /.prototype/
 
-# 旧的非点号路径：历史上用过，万一又冒出来同样不进镜像
-/data/
-/data_sample/
-/ref/
-/shots/
-/blessing-skin-server/
+# 验证截图与本机临时脚本
+/.shots/
+
+# agent / 编辑器 / 语言运行时自带的目录
+/.agents/
+/.claude/
+/.codex/
+/.venv/
+
+# 环境变量与日志
+/.env
+/.env.*
+*.log
+
+# 构建镜像用不到的文档与部署描述
+/docs/
+/README.md
+/DESIGN.md
+/k8s.scoped-skin.yaml
+/justfile

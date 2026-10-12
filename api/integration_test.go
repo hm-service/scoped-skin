@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"scoped-skin/api"
+	"scoped-skin/api/yggdrasil"
 	"scoped-skin/core"
 	"scoped-skin/internal/testenv"
 )
@@ -91,18 +92,12 @@ func TestLauncherDiscoveryThenJoin(t *testing.T) {
 	instance := testenv.New(t)
 	handler := api.NewHandler(instance)
 
-	// DESIGN.md 3.1：站点首页用 ALI 头指出 Yggdrasil 服务在哪
-	recorder := testenv.Do(handler, http.MethodGet, "/", nil, "")
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("首页 = %d", recorder.Code)
-	}
-	location := recorder.Header().Get("X-Authlib-Injector-API-Location")
-	if location != "/api/yggdrasil" {
-		t.Fatalf("ALI 头 = %q", location)
-	}
+	// DESIGN.md 3.1：站点首页用 ALI 头指出 Yggdrasil 服务在哪（首页由站点外壳负责发出，
+	// 那条在根目录 web_test.go 里测）。启动器顺着这个地址走完下面的流程。
+	location := yggdrasil.AliasPrefix
 
 	// 顺着 ALI 摸到根元数据，拿到签名公钥
-	recorder = testenv.Do(handler, http.MethodGet, location, nil, "")
+	recorder := testenv.Do(handler, http.MethodGet, location, nil, "")
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("根元数据 = %d", recorder.Code)
 	}

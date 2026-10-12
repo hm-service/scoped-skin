@@ -9,13 +9,13 @@ on:
             - "DESIGN.md"
             - "k8s.scoped-skin.yaml"
             - "LICENSE"
-            - "Makefile"
+            - "justfile"
             - "docs/**"
             - ".gitignore"
     workflow_dispatch:
 
 jobs:
-    test:
+    test-go:
         runs-on: ubuntu-latest
 
         permissions:
@@ -31,23 +31,47 @@ jobs:
                   go-version-file: go.mod
                   cache: true
 
+            # go:embed all:frontend/dist 要求编译期磁盘上就有可嵌入的文件
+            - name: Stub frontend/dist
+              run: mkdir -p frontend/dist && touch frontend/dist/STUB
+
             - name: go vet
               run: go vet ./...
 
             - name: go test
               run: go test ./... -count=1
 
+    test-frontend:
+        runs-on: ubuntu-latest
+
+        permissions:
+            contents: read
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v7
+
+            - name: Set up pnpm
+              uses: pnpm/action-setup@v6
+              with:
+                  version: 12
+
             - name: Set up Node
               uses: actions/setup-node@v7
               with:
-                  node-version: "22.x"
+                  node-version: "26.x"
+                  cache: pnpm
+                  cache-dependency-path: frontend/pnpm-lock.yaml
 
-            # 扫源码里的 t("…") 和两本英文字典对账，漏翻/多余都 exit 1
-            - name: check frontend i18n
-              run: node tools/check-i18n.mjs
+            - name: Install
+              run: cd frontend && pnpm install --frozen-lockfile
+
+            # 类型检查同时守着文案表：t() 的参数类型就是 catalog 的键，漏配 / 键名写错都过不去
+            - name: Type check
+              run: cd frontend && pnpm typecheck
 
     build-and-push:
-        needs: test
+        needs: [test-go, test-frontend]
         runs-on: ubuntu-latest
 
         permissions:

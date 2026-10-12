@@ -2,7 +2,7 @@
 
 Go 实现的 Minecraft 皮肤站（标准库 `net/http` + `modernc.org/sqlite`）：贴图的浏览 / 收藏 / 上传与实时 3D 预览，外加 Yggdrasil（authlib-injector 兼容）认证。前后端经 `go:embed` 编成一个静态二进制，运行时不依赖外部文件，界面与接口文案支持中英两档。
 
-参考了项目 [Blessing Skin Server](https://github.com/bs-community/blessing-skin-server)。3D 预览用 [skinview3d](https://github.com/bs-community/skinview3d)（UMD bundle），界面用 [Vue 3](https://vuejs.org/) 全局构建。
+参考了项目 [Blessing Skin Server](https://github.com/bs-community/blessing-skin-server)。3D 预览用 [skinview3d](https://github.com/bs-community/skinview3d)（npm 依赖），界面是 [Vue 3](https://vuejs.org/) 单文件组件 + TypeScript，由 Vite 打包（源码在 `frontend/`）。
 
 相关库均内嵌，不请求 CDN。
 
@@ -26,17 +26,18 @@ Go 实现的 Minecraft 皮肤站（标准库 `net/http` + `modernc.org/sqlite`�
 ## 2. 快速开始
 
 ```bash
-make run                                   # DATA_DIR=./.data，首次启动建号：admin / devpass123
+just run                                   # 先构建前端，再以仓库根的 .data 为 DATA_DIR 启动；首次启动建号：admin / devpass123
 # 打开 http://127.0.0.1:8080，未登录会跳转 /auth
-make run ADMIN_PASSWORD='dev_pass_123'     # 覆盖开发密码（仅首次建号时生效；只收字母 / 数字 / 下划线）
-make build                                 # 编译单文件二进制到 .dist/scoped-skin
-make dist                                  # 交叉编译 linux/amd64 + linux/arm64 到 .dist/（纯静态，无 cgo）
+ADMIN_PASSWORD='dev_pass_123' just run     # 覆盖开发密码（仅首次建号时生效；只收字母 / 数字 / 下划线）
+just build                                 # 先构建前端，再交叉编译 linux/amd64 + linux/arm64 到 .dist/（纯静态，无 cgo）
 ```
 
-产物统一落在 `.dist/`（不入库）：
+构建产物分两处，都不入库：
 
-- `make build` 出本机架构的 `.dist/scoped-skin`；
-- `make dist` 出 `.dist/scoped-skin-linux-amd64` 与 `.dist/scoped-skin-linux-arm64`，不需要交叉工具链；
+- `just build` 出 `.dist/scoped-skin-linux-amd64` 与 `.dist/scoped-skin-linux-arm64`，不需要交叉工具链；没有本机架构的产物，本地跑用 `just run`；
+- `just frontend` 只构建前端到 `frontend/dist/`（= `cd frontend && pnpm install --frozen-lockfile && pnpm build`），编译时才被 `go:embed` 嵌进二进制。
+
+改前端也可以 `cd frontend && pnpm dev`：Vite dev server 自己出页面（地址是 `/auth.html` 这种），`/api`、`/asset`、`/livez`、`/readyz` 反代到 127.0.0.1:8080。
 
 容器：`docker build -t scoped-skin .`
 
@@ -51,37 +52,37 @@ make dist                                  # 交叉编译 linux/amd64 + linux/ar
 ## 3. 测试
 
 ```bash
-make test        # go test ./... -count=1
-make vet         # go vet ./...
-make i18n        # 前端文案自检：漏配 / 多配 / 缺栏 / 键名（tools/check-i18n.mjs）
-make fmt         # go fmt ./...：只格式化本模块的包
+just test        # go test ./... -count=1
+just vet         # go vet ./...
+just check       # vet + test + 前端的 vue-tsc 类型检查（键名写错 / 漏配文案都在这里拦下；缺依赖会按锁文件装一次）
+just fmt         # go fmt ./...：只格式化本模块的包
 ```
 
-覆盖率（`go test ./... -cover` 实测）：`i18n` 100%、`httpx` 98.3%、`core` 94.5%、`api/yggdrasil` 93.0%、`api` 86.4%、`db` 85.2%、`app` 71.7%；账号校验受恒定 1 秒约束，登录相关用例本身较慢。
+覆盖率（`go test ./... -cover` 实测）：`i18n` 100%、`httpx` 98.3%、`core` 94.5%、`api/yggdrasil` 93.0%、`api` 86.5%、`db` 85.2%、`app` 71.7%、站点外壳与接线（根包）67.7%；账号校验受恒定 1 秒约束，登录相关用例本身较慢。
 
 ## 4. 语言与文案
 
-中文是源语言（默认值），英文是另一栏；**键是点号分层的符号名，前后端同一套策略**：后端 `i18n/i18n.go` 的 `catalog`，前端 `web/js/i18n-app.js` / `i18n-admin.js`，每条都写中英两栏。模板里写 `{{ t("library.search-placeholder") }}`，带变量时 `t("toast.equipped", { name })`；业务层只抛键与参数，渲染成哪种语言由 HTTP 层按 `Accept-Language` 决定（见 [DESIGN.md 2.4](DESIGN.md#24-语言)）。键写错不静默（原样显示键本身），改完跑 `make i18n` 与 `go test ./i18n/`。Yggdrasil 的错误文案由规范固定为英文，不翻译。
+中文是源语言（默认值），英文是另一栏；**键是点号分层的符号名，前后端同一套策略**：后端 `i18n/i18n.go` 的 `catalog`，前端 `frontend/src/locales/app.ts`（跨页共用 + 主应用）与 `locales/admin.ts`（登录页 + 维护页），形状见 `locales/catalog.ts`，运行时在 `frontend/src/i18n.ts` 合并成一张 catalog，每条都写中英两栏。模板里写 `{{ t("library.search-placeholder") }}`，带变量时 `t("toast.equipped", { name })`；业务层只抛键与参数，渲染成哪种语言由 HTTP 层按 `Accept-Language` 决定（见 [DESIGN.md 2.4](DESIGN.md#24-语言)）。键写错不静默：前端 `t()` 的参数类型就是合并后 catalog 的键，键名写错 / 漏配 / 缺栏由 `vue-tsc`（`just check`）拦下；后端 `T()` 原样返回键本身，由 `go test ./i18n/` 守。Yggdrasil 的错误文案由规范固定为英文，不翻译。
 
 ![皮肤库（英文）](docs/screenshot-library-en.png)
 
 ## 5. 目录结构
 
 ```
-main.go                    # 入口：环境变量 → 应用容器 → 路由 → 监听
-Makefile  Dockerfile       # build / dist / run / test / vet / fmt / i18n；两阶段容器构建（amd64 + arm64）
+main.go  web.go            # 入口（环境变量 → 应用容器 → 路由 → 监听）；web.go 是站点外壳：页面路由表 + go:embed frontend/dist
+justfile  Dockerfile       # 项目命令：frontend / build / run / check / test / vet / fmt / clean；三段容器构建（前端 → Go → 运行时）
 k8s.scoped-skin.yaml       # podman kube play 用的 Pod + PVC + ConfigMap（含探针与资源上限）
-api/                       # HTTP 层：路由、中间件、语言、页面/探针、站点 API、yggdrasil/（规范接口）
+api/                       # HTTP 层：中间件（日志 / 并发 / 安全头 / 语言 / 体积上限）、探针、/asset/* 的贴图字节、站点 API、yggdrasil/（规范接口）；页面与静态资源不在这里
 app/                       # 应用容器：库 + 令牌表 + 会话 + 密钥 + 审计 + Argon2 闸门，及启动时的权限收紧
 core/                      # 纯逻辑：Argon2id、站点 token、内存会话、RSA、审计、文件权限、离线 UUID、校验
 db/                        # SQLite：打开 / 建表 / 就绪、账号、贴图与内置资源、收藏
 httpx/ i18n/ builtin/      # JSON 响应与客户端 IP、后端文案表、官方默认皮肤（编入二进制）
 internal/testenv/          # 测试脚手架：独立临时实例 + 复用的 RSA 密钥
-web/                       # 前端，由 go:embed 编入；js/ 下 store、viewer（3D 封装）、tags、组件与页面根组件
-tools/                     # fetch_builtin.py（抓官方皮肤）、check-i18n.mjs、shot.mjs（CDP 截图）
+frontend/                  # 前端源码：pnpm + Vite + Vue 3 SFC + TypeScript；三个入口 index/auth/maintain.html，src/ 下 store、viewer（3D 封装）、组件与页面组件，全局样式在 src/style.css（设计变量与跨组件原语），组件自己的样式写在各自的 <style scoped> 里，产物 dist/ 不入库
+tools/                     # fetch_builtin.py（抓官方皮肤）、shot.mjs（CDP 截图，--pre-eval 先注入 JS 再打开页面）
 ```
 
-测试文件与源码同目录（`*_test.go`、`internal/testenv/`），不单列。3D 预览对 skinview3d 做了哪些封装（限帧 / 可见性暂停 / 光照 / 平移与重置）写在 `web/js/viewer.js` 顶部注释与 [DESIGN.md 2.1](DESIGN.md#21-页面)，逐条附实测数字。
+测试文件与源码同目录（`*_test.go`、`internal/testenv/`），不单列，站点外壳的用例在根目录 `web_test.go`。3D 预览对 skinview3d 做了哪些封装（限帧 / 可见性暂停 / 光照 / 平移与重置）写在 `frontend/src/viewer.ts` 顶部注释，逐条附实测数字。
 
 ## 6. 调试
 

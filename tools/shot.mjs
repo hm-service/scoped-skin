@@ -40,6 +40,7 @@ const USAGE = `Usage: node tools/shot.mjs --url <url> --out <png path> [options]
   --key <name>             key down+up: single char or named key (repeatable)
   --wheel <x,y,deltaY>     mouse wheel at a point (repeatable)
   --eval <js>              evaluate JS, print JSON result (repeatable)
+  --pre-eval <js>          run JS in every new document before its own scripts (repeatable)
   --wait-for <expr>        poll JS expression until truthy (10s timeout)
   --console                forward page console/errors to stderr (always on)
   --full                   full-page screenshot beyond the viewport
@@ -65,6 +66,7 @@ function parseArgs(argv) {
     quiet: false,
     console: false,
     waitFors: [],
+    preEvals: [], // injected into every new document, before its own scripts
     actions: [], // ordered {kind, ...}
   };
 
@@ -119,6 +121,7 @@ function parseArgs(argv) {
         break;
       }
       case '--eval': o.actions.push({ kind: 'eval', expr: need() }); break;
+      case '--pre-eval': o.preEvals.push(need()); break;
       case '--help': case '-h': process.stdout.write(USAGE); process.exit(0); break;
       default:
         throw new UsageError(`unknown option "${a}"\n\n${USAGE}`);
@@ -601,6 +604,10 @@ async function main() {
     });
 
     /* ---- navigate + load ---- */
+    for (const expr of opts.preEvals) {
+      log(`pre-eval: ${expr}`);
+      await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: expr });
+    }
     let loadFired = false;
     const onLoad = cdp.on('Page.loadEventFired', () => { loadFired = true; });
     log(`navigating to ${opts.url}`);

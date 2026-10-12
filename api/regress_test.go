@@ -148,13 +148,14 @@ func TestRoutingErrorsAndNegotiationHeaders(t *testing.T) {
 
 	// 站点路由上方法不对：405 + Allow（register 给每条路径补了不限方法的规则，
 	// 否则会被底部那条 `/` 兜底吞成 404）。/api/* 下错误体仍是 JSON。
+	// Allow 里 GET 要连 HEAD 一起写：Go 的 "GET" 模式本身就接 HEAD。
 	recorder = testenv.Do(handler, http.MethodPost, "/api/library", nil, "")
 	if recorder.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST /api/library 状态码 = %d，想要 405（%s）",
 			recorder.Code, recorder.Body.String())
 	}
-	if got := recorder.Header().Get("Allow"); got != "GET" {
-		t.Errorf("POST /api/library Allow = %q，想要 GET", got)
+	if got := recorder.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Errorf("POST /api/library Allow = %q，想要 %q", got, "GET, HEAD")
 	}
 	if got := detail(t, recorder); got != "Method Not Allowed" {
 		t.Errorf("POST /api/library detail = %q，想要 %q", got, "Method Not Allowed")
@@ -165,18 +166,26 @@ func TestRoutingErrorsAndNegotiationHeaders(t *testing.T) {
 	if recorder.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST /livez 状态码 = %d，想要 405（%s）", recorder.Code, recorder.Body.String())
 	}
-	if got := recorder.Header().Get("Allow"); got != "GET" {
-		t.Errorf("POST /livez Allow = %q，想要 GET", got)
+	if got := recorder.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Errorf("POST /livez Allow = %q，想要 %q", got, "GET, HEAD")
 	}
 	if strings.Contains(recorder.Body.String(), `"detail"`) {
 		t.Errorf("非 API 的 405 不该是 JSON 错误体: %q", recorder.Body.String())
 	}
 
-	// Yggdrasil 那套也是 405（由它自己注册的「不限方法」规则给出）
+	// Yggdrasil 那套也是 405（由它自己注册的「不限方法」规则给出），Allow 同样是这条
+	// 路径认的方法；只认 POST 的端点就只写 POST
 	recorder = testenv.Do(handler, http.MethodGet, "/api/yggdrasil/authserver/authenticate", nil, "")
 	if recorder.Code != http.StatusMethodNotAllowed {
 		t.Errorf("GET /api/yggdrasil/authserver/authenticate 状态码 = %d，想要 405（%s）",
 			recorder.Code, recorder.Body.String())
+	}
+	if got := recorder.Header().Get("Allow"); got != "POST" {
+		t.Errorf("GET /api/yggdrasil/authserver/authenticate Allow = %q，想要 POST", got)
+	}
+	recorder = testenv.Do(handler, http.MethodPost, "/api/yggdrasil", nil, "")
+	if got := recorder.Header().Get("Allow"); recorder.Code != http.StatusMethodNotAllowed || got != "GET, HEAD" {
+		t.Errorf("POST /api/yggdrasil = %d Allow %q，想要 405 + %q", recorder.Code, got, "GET, HEAD")
 	}
 
 	// 语言协商头在错误响应上也在
@@ -304,19 +313,7 @@ func TestLibraryQueryParameterEdges(t *testing.T) {
 		t.Errorf("不存在的贴图 detail = %q", got)
 	}
 
-	for _, path := range []string{"/auth", "/maintain"} {
-		recorder = testenv.Do(handler, http.MethodGet, path, nil, "")
-		if recorder.Code != http.StatusOK {
-			t.Errorf("GET %s 状态码 = %d，想要 200", path, recorder.Code)
-			continue
-		}
-		if got := recorder.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/html") {
-			t.Errorf("GET %s Content-Type = %q", path, got)
-		}
-		if recorder.Body.Len() == 0 {
-			t.Errorf("GET %s 回了空页面", path)
-		}
-	}
+	// 页面（/auth、/maintain 这些）由站点外壳负责，见根目录 web_test.go。
 }
 
 // DESIGN.md 5.1 的回归：guest 收紧成只读身份组 —— 任何会改持久化资源的写操作都要 403

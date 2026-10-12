@@ -102,7 +102,7 @@ func TestConcurrencySkipsStaticPaths(t *testing.T) {
 		<-release
 	}
 
-	for _, path := range []string{"/", "/static/js/app.js", "/asset/abc", "/livez"} {
+	for _, path := range []string{"/", "/assets/app-abc.js", "/asset/abc", "/livez"} {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
@@ -117,16 +117,17 @@ func TestConcurrencySkipsStaticPaths(t *testing.T) {
 	close(block)
 }
 
-// 访问日志不记纯静态与存活探针（噪音），但页面与 /api/* 照记。
+// 访问日志不记纯静态与存活探针（噪音），但接口照记。页面走的是同一层中间件，
+// 只是由站点外壳那边测（根目录 web_test.go）。
 func TestAccessLogSkipsStaticAndLivez(t *testing.T) {
 	_, handler := newSite(t)
 	read := captureLogs(t)
 
-	silent := []string{"/static/js/app.js", "/asset/" + strings.Repeat("a", 64), "/livez"}
+	silent := []string{"/assets/app-abc.js", "/asset/" + strings.Repeat("a", 64), "/livez"}
 	for _, path := range silent {
 		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
 	}
-	noisy := []string{"/auth", "/api/nope"}
+	noisy := []string{"/api/nope", "/readyz"}
 	for _, path := range noisy {
 		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
 	}

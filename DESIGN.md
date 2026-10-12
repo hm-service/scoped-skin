@@ -61,7 +61,9 @@
 
 ### 2.1. /
 
-主页，用于管理玩家的皮肤。
+主页，用于管理玩家的皮肤。三个页面都是 `frontend/` 里的 Vite 入口（`index.html` / `auth.html` / `maintain.html`），一个页面只有一个 URL —— 页面路由表、产物里的其余文件与缓存见 [3.7](#37-静态资源与页面托管)。
+
+三个页面共用一层**全局样式**（`frontend/src/style.css`）：设计变量、reset，以及两个以上组件都用到的原语（图标、按钮、输入框、标签 chip、模态框、页面骨架）。只属于某个组件的样式写在它的 `<style scoped>` 里，由 Vue 的作用域属性绑定到该组件的元素；父组件仍能通过这个属性给子组件的**根元素**上样式（卡片里的标签胶囊就是这么染色的），但够不到子组件内部 —— 这条边界决定了样式该放哪一层。
 
 ### 2.2. /auth
 
@@ -75,7 +77,7 @@
 
 界面文案与后端返回的文案都支持**简体中文**（`zh-Hans`，默认）与**英文**（`en`）两档。前端在每个请求上带 `Accept-Language` 头（值就是当前界面语言），后端按它挑文案、并在响应上回 `Content-Language`；选择存在浏览器本地，不跟账号走。Yggdrasil 那套错误文案是规范定死的英文，不翻译。
 
-两边用**同一套文案策略**：键是点号分层的符号名（`library.search-placeholder`、`valid.username.invalid`），每条同时给中英两栏 —— 后端 `i18n/i18n.go` 的 `catalog`，前端 `web/js/i18n-app.js` 与 `web/js/i18n-admin.js`（跨页共用的键只在 app 那份里定义，运行时合并成一张 catalog）。键写错不静默：后端 `T()` 与前端 `t()` 都原样返回键本身。两边各有一道自检：`go test ./i18n/` 守后端，`make i18n`（`tools/check-i18n.mjs`）守前端 —— 漏配、多配、缺栏、键名不合规范、同一个键在两份表里重复定义都会被拦下。
+两边用**同一套文案策略**：键是点号分层的符号名（`library.search-placeholder`、`valid.username.invalid`），每条同时给中英两栏 —— 后端 `i18n/i18n.go` 的 `catalog`，前端 `frontend/src/locales/app.ts`（跨页共用 + 主应用）与 `frontend/src/locales/admin.ts`（登录页 + 维护页），形状见 `frontend/src/locales/catalog.ts`，运行时在 `frontend/src/i18n.ts` 合并成一张 catalog。键写错不静默：后端 `T()` 原样返回键本身，由 `go test ./i18n/` 守；前端 `t()` 的参数类型就是合并后 catalog 的键，键名写错 / 漏配 / 缺栏由 `vue-tsc` 在 `just check` 里拦下。
 
 ## 3. API
 
@@ -214,9 +216,27 @@ flowchart LR
 
 删除贴图**不拦截「有人正在用」**，但会把它留下的引用一起清掉：`favorite` 行删掉，`user.skin` / `user.cape` 里指向它的那格清成空串（两处都没有外键，全靠代码保证）—— 不清的话使用者会指向一条不存在的记录，`/api/me` 只能给出 null、前端 3D 面板只报「皮肤贴图加载失败」。所以删除前前端会先问 `GET /api/items/{asset_id}/users`，把使用者的名字列进确认框（`slot` 区分皮肤 / 披风）；确认后照删，删完给一条「N 个账号已取消装备」的提示。已经打开的页面不会实时收到通知（没有推送通道），要自己刷新 —— 这一点写在 `db.dropAssetLocked` 的注释里。
 
-### 3.7. /static/*
+### 3.7. 静态资源与页面托管
 
-分发前端静态资源（HTML 之外的 js / css / vendor）。只认具体文件：目录与不存在的路径一律 `404`，不提供目录列表。
+页面与产物里的其余文件由站点外壳（根目录 `web.go`）分发：产物是 `frontend/` 的 Vite 构建结果（`frontend/dist/`），编译时由 `go:embed all:frontend/dist` 嵌进二进制。
+
+页面路由表（对外的 URL 不带 `.html`，产物里的 `*.html` 不能被直接访问，一个页面因此只有一个 URL）：
+
+| URL         | 产物文件        | 额外响应头                                                  |
+| ----------- | --------------- | ----------------------------------------------------------- |
+| `/`         | `index.html`    | `X-Authlib-Injector-API-Location: /api/yggdrasil`（见 3.1） |
+| `/auth`     | `auth.html`     |                                                             |
+| `/maintain` | `maintain.html` |                                                             |
+
+其余文件按构建产物里的原路径发（`/assets/<name>-<hash>.js|css`、`/favicon.svg` 等），缓存分三档：
+
+| 路径                       | `Cache-Control`                       | 理由                             |
+| -------------------------- | ------------------------------------- | -------------------------------- |
+| 页面                       | `no-store`                            | 改完前端不能还看旧的             |
+| `/assets/*`                | `public, max-age=31536000, immutable` | 文件名带内容哈希，可以放心长缓存 |
+| 其余（`favicon.svg` 这种） | `no-cache`                            | 固定名字，每次回源确认           |
+
+只认具体文件：目录（含 `/assets/` 本身）与不存在的路径一律 `404`，不给目录列表。页面缺失回 `500` 而不是 `404` —— 产物是嵌进二进制的，读不到说明这个二进制本身是坏的。
 
 ## 4. 数据库
 
@@ -349,8 +369,8 @@ flowchart LR
 
 - **恒定请求时间**：无论账号存在与否、密码对错，账号验证都至少等待 1 秒才返回，用来抹掉「不存在的账号秒回」这个时序侧信道，也顺带把单客户端的请求频率压到 60 次/分钟以下；
 - **Argon2id 并发上限**：同时进行的校验最多 4 个（`app.ArgonConcurrency`）。每次校验要吃 19 MiB，不限并发即等于放弃内存上限（实测 30 并发会把常驻内存从 18 MiB 抬到 513 MiB）；
-- **请求并发上限**：`/api/*` 共用 `128` 个槽位（`api.MaxConcurrentRequests`），超出的在闸门外排队（客户端断开即直接放行），避免 goroutine / SQLite / Argon2 同时被放开；页面、`/static/*` 与 `/asset/*` 不占槽位 —— 它们不吃 Argon2，没必要跟着受限；
-- **安全响应头**：所有响应都带 `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Frame-Options: DENY`。CSP 暂不引入（前端用 Vue 全局构建，模板在运行时编译，需要 `unsafe-eval`，见 [5.7](#57-设计取舍)）；
+- **请求并发上限**：`/api/*` 共用 `128` 个槽位（`api.MaxConcurrentRequests`），超出的在闸门外排队（客户端断开即直接放行），避免 goroutine / SQLite / Argon2 同时被放开；页面、`/assets/*` 与 `/asset/*` 不占槽位 —— 它们不吃 Argon2，没必要跟着受限；
+- **安全响应头**：所有响应都带 `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Frame-Options: DENY`。CSP 暂不引入（前端的模板在构建期编译，不再需要 `unsafe-eval`）；
 - **频率上限**：应用侧不做限流，由反向代理承担 —— 站点登录建议 `5r/m`，上传与 `authenticate` 建议 `30r/m`，并配 `limit_conn`；应用自身只保证「同时在处理的 `/api/*` 请求 ≤ 128」。
 
 ### 5.4. 审计记录
@@ -401,7 +421,7 @@ flowchart LR
 | textures 沿用 RSA-SHA1                        | 规范将算法固定为 SHA1withRSA 且客户端硬编码验签；公钥取自同一元数据，签名仅防传输与缓存篡改           | 该算法在现代标准下已弃用                                                      |
 | 标签代替命名，且无固定词表                    | 免去分类体系与命名冲突                                                                                | 无重命名 / 合并功能，搜索只有子串匹配（不认拼音、拼写错误与词形）             |
 | SQLite 单文件、单连接、无外键                 | 便于单文件部署与备份，且可 `CGO_ENABLED=0` 产出静态二进制                                             | 一致性由代码保证（删资源需手工清理 favorite 与装备）                          |
-| 前端用 Vue 全局构建、模板运行时编译           | 无 npm 与打包器，改完重新编译即可                                                                     | 无法使用严格 CSP（需 `unsafe-eval`）                                          |
+| 前端用 Vite + Vue SFC（模板在构建期编译）     | 有 pnpm 与打包器：SFC 组件化、TS 类型检查，三个入口各出一个产物                                       | 构建依赖 Node 与 pnpm，产物再 `go:embed` 进二进制                             |
 | 日志不落文件、审计走 stdout                   | 由容器运行时统一轮转与收集                                                                            | 无内置查看入口                                                                |
 | 贴图管理自建，未实现规范的材质上传接口        | 上传流程需与本站的预检、标签、收藏联动                                                                | 角色属性不返回 `uploadableTextures`，第三方客户端无法直接修改材质             |
 | 每账号最多 8 个令牌，超出先吊销最旧的         | 规范要求服务端限制令牌数；内存表不能随登录次数无界增长                                                | 同一账号开第 9 个客户端时最早那个被静默登出，得重新 `authenticate`            |

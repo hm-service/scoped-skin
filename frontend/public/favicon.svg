@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+  width="64" height="64" viewBox="0 0 64 64"
+  role="img" aria-labelledby="scoped-skin-icon-title">
+  <title id="scoped-skin-icon-title">Scoped Skin · 角色衣橱</title>
+
+  <!-- 绿色圆角底 -->
+  <rect width="64" height="64" rx="14" fill="#277447" />
+
+  <!-- 方块头 -->
+  <path fill="#FFFFFF" d="M24 12h16v16H24z" />
+
+  <!-- 像素上衣 -->
+  <path fill="#FFFFFF"
+    d="M20 32h8v4h8v-4h8v4h4v4h4v8h-8v-4h-4v12H24V44h-4v4h-8v-8h4v-4h4z" />
+</svg>

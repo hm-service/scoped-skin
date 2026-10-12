@@ -11,6 +11,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
+	"strings"
 
 	"scoped-skin/app"
 	"scoped-skin/httpx"
@@ -54,8 +56,17 @@ func badRequest(w http.ResponseWriter, message string) {
 	sendError(w, http.StatusBadRequest, "Bad Request", message)
 }
 
-func methodNotAllowed(w http.ResponseWriter, r *http.Request) {
-	sendError(w, http.StatusMethodNotAllowed, "Method Not Allowed", "")
+// methodNotAllowed 回规范的 JSON 405，并带上这条路径认的方法（Allow）。Go 的 "GET" 模式
+// 同时也接 HEAD，所以 GET 要连 HEAD 一起写出来 —— 与站点外壳、api 的 register 同一条规则。
+func methodNotAllowed(methods ...string) http.HandlerFunc {
+	if slices.Contains(methods, http.MethodGet) && !slices.Contains(methods, http.MethodHead) {
+		methods = append(methods, http.MethodHead)
+	}
+	allow := strings.Join(methods, ", ")
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Allow", allow)
+		sendError(w, http.StatusMethodNotAllowed, "Method Not Allowed", "")
+	}
 }
 
 func notFound(w http.ResponseWriter, r *http.Request) {
