@@ -161,11 +161,12 @@ func ensureAdmin(store *db.Store, username, password string) error {
 	return nil
 }
 
-// Close 关闭数据库。
-func (a *App) Close() {
-	if a.Store != nil {
-		a.Store.Close()
+// Close 关闭数据库。错误交给调用方 —— 关闭失败要在退出码里体现（AGENTS.md 的启停约定）。
+func (a *App) Close() error {
+	if a.Store == nil {
+		return nil
 	}
+	return a.Store.Close()
 }
 
 // ClientIP 按可信代理设置取客户端 IP（DESIGN.md 5.5）。

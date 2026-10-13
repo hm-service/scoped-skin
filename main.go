@@ -1,13 +1,17 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 
 	"scoped-skin/api"
@@ -17,6 +21,10 @@ import (
 
 // version 是根元数据里的 implementationVersion，也是启动日志里的一条。
 const version = "0.2.0"
+
+// shutdownTimeout 是优雅关闭的时限（AGENTS.md 的启停约定）：等在手请求最多等这么久，
+// 超时就强制关掉，进程以 254 退出。
+const shutdownTimeout = 5 * time.Second
 
 func initLogger() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -57,6 +65,50 @@ func readLimit(name string, fallback int) (int, error) {
 	return value, nil
 }
 
+// readPort 读 PORT（AGENTS.md 的环境变量约定）：没设就用 8080，设了就必须是 1-65535 的整数。
+func readPort() (int, error) {
+	raw := os.Getenv("PORT")
+	if raw == "" {
+		return 8080, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 || value > 65535 {
+		return 0, fmt.Errorf("PORT 必须是 1-65535 的整数，实际是 %q", raw)
+	}
+	return value, nil
+}
+
+// readReadyzToken 读 READYZ_TOKEN（AGENTS.md 的环境变量约定）：留空表示探针不设门槛；
+// 设了就必须是 16-128 位、只含小写字母 / 数字 / 下划线 —— 它要拼进 URL，写错不如启动时就拦下。
+func readReadyzToken() (string, error) {
+	token := os.Getenv("READYZ_TOKEN")
+	if token == "" {
+		return "", nil
+	}
+	if len(token) < 16 || len(token) > 128 {
+		return "", fmt.Errorf("READYZ_TOKEN 长度必须是 16-128，实际是 %d", len(token))
+	}
+	for _, r := range token {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
+			return "", fmt.Errorf("READYZ_TOKEN 只允许小写字母、数字与下划线，实际含 %q", r)
+		}
+	}
+	return token, nil
+}
+
+// checkTimezone 读 TZ（AGENTS.md 的环境变量约定）：设了就必须是 Go 认得的地名。
+// 名字写错时 Go 会静默退回 UTC，日志时间戳跟着错 —— 宁可在启动时报出来。
+func checkTimezone() error {
+	name := os.Getenv("TZ")
+	if name == "" {
+		return nil
+	}
+	if _, err := time.LoadLocation(name); err != nil {
+		return fmt.Errorf("TZ 不是有效的时区名 %q: %w", name, err)
+	}
+	return nil
+}
+
 // newRootHandler 把两半接起来：站点外壳（web.go）管页面与静态资源，api 包管接口、
 // 探针与贴图字节；两半各套一层并发闸门、各用一份槽位，外面再套共用的那几层中间件
 // （访问日志、安全头、语言协商、体积上限），站点外壳因此和接口一样有安全头与访问日志。
@@ -83,6 +135,20 @@ func main() {
 		slog.Error("init failed", slog.Any("error", err))
 		os.Exit(1)
 	}
+	port, err := readPort()
+	if err != nil {
+		slog.Error("init failed", slog.Any("error", err))
+		os.Exit(1)
+	}
+	readyzToken, err := readReadyzToken()
+	if err != nil {
+		slog.Error("init failed", slog.Any("error", err))
+		os.Exit(1)
+	}
+	if err := checkTimezone(); err != nil {
+		slog.Error("init failed", slog.Any("error", err))
+		os.Exit(1)
+	}
 
 	instance, err := app.Open(app.Config{
 		DataDir:        os.Getenv("DATA_DIR"),
@@ -91,35 +157,90 @@ func main() {
 		AdminUsername:  os.Getenv("ADMIN_USERNAME"),
 		AdminPassword:  os.Getenv("ADMIN_PASSWORD"),
 		TrustedProxies: os.Getenv("TRUSTED_PROXIES"),
-		ReadyzToken:    os.Getenv("READYZ_TOKEN"),
+		ReadyzToken:    readyzToken,
 	})
 	if err != nil {
 		slog.Error("init failed", slog.Any("error", err))
 		os.Exit(1)
 	}
-	defer instance.Close()
 
-	// 路由与监听（DESIGN.md 1.1：HOST / PORT）
+	// 路由与监听（DESIGN.md 1.1：HOST / PORT）。自己 Listen 而不是 ListenAndServe，
+	// 是为了先拿到内核给的地址再打启动日志，端口写 0 时也只有这里看得到实际端口。
 	host := os.Getenv("HOST")
 	if host == "" {
 		host = "127.0.0.1"
 	}
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	listener, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	if err != nil {
+		slog.Error("init failed", slog.Any("error", err))
+		instance.Close()
+		os.Exit(1)
 	}
 	server := &http.Server{
-		Addr:              host + ":" + port,
 		Handler:           newRootHandler(instance, site, limits),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	slog.Info("server started",
-		slog.String("addr", server.Addr),
-		slog.String("dataDir", instance.Config.DataDir),
+		slog.String("addr", listener.Addr().String()),
+		slog.String("data_dir", instance.Config.DataDir),
+		slog.String("start_at", time.Now().Format(time.RFC3339)),
 		slog.String("version", version),
 	)
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		slog.Error("server exited with error", slog.Any("error", err))
-		os.Exit(1)
+	os.Exit(serve(server, listener, instance))
+}
+
+// serve 跑起服务并处理停止信号（AGENTS.md 的启停约定）：第一次 SIGINT / SIGTERM 走优雅关闭，
+// 之后的信号交回默认处置 —— 卡在等待里时，再按一次 Ctrl-C 就该立刻结束。
+//
+// 返回值即进程退出码：正常关闭 0；Shutdown 超时被强制关闭 254；关库失败 255。
+func serve(server *http.Server, listener net.Listener, instance *app.App) int {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	served := make(chan error, 1)
+	go func() { served <- server.Serve(listener) }()
+
+	var received os.Signal
+	select {
+	case received = <-signals:
+		signal.Stop(signals)
+		slog.Info("shutdown signal received", slog.String("signal", signalName(received)))
+	case err := <-served:
+		if !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("server exited with error", slog.Any("error", err))
+			instance.Close()
+			return 1
+		}
+		instance.Close()
+		return 0
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		slog.Error("graceful shutdown timed out", slog.Any("error", err))
+		server.Close()
+		instance.Close()
+		return 254
+	}
+	if err := instance.Close(); err != nil {
+		slog.Error("closing data store failed", slog.Any("error", err))
+		return 255
+	}
+	slog.Info("server shutdown",
+		slog.String("signal", signalName(received)),
+		slog.String("stop_at", time.Now().Format(time.RFC3339)),
+	)
+	return 0
+}
+
+// signalName 把信号写成 SIGINT / SIGTERM 这样的规范名：Go 默认的 "interrupt" / "terminated"
+// 在运维侧不直观。
+func signalName(sig os.Signal) string {
+	switch sig {
+	case syscall.SIGINT:
+		return "SIGINT"
+	case syscall.SIGTERM:
+		return "SIGTERM"
+	}
+	return sig.String()
 }

@@ -91,7 +91,7 @@ func NewWith(t *testing.T, mutate func(*app.Config)) *app.App {
 	if err != nil {
 		t.Fatalf("打开测试实例失败: %v", err)
 	}
-	t.Cleanup(instance.Close)
+	t.Cleanup(func() { instance.Close() })
 	Seed(t, instance)
 	return instance
 }

@@ -8,6 +8,12 @@ DIST := ".dist"
 DIST_OS := env("DIST_OS", "linux")
 ARCHS := env("ARCHS", "amd64 arm64")
 
+# 启停用的三个变量（AGENTS.md 的启停约定）：默认值与应用自身的默认值一致，
+# 所以 `just run PORT=10080` 与 `PORT=10080 just run` 等价。
+HOST := env("HOST", "127.0.0.1")
+PORT := env("PORT", "8080")
+DATA_DIR := justfile_directory() / ".data"
+
 # 列出全部命令
 default:
     @just --list
@@ -28,14 +34,51 @@ build: frontend
     mkdir -p {{ DIST }}
     for arch in {{ ARCHS }}; do
         printf '  %-20s' "{{ DIST_OS }}/$arch"
-        CGO_ENABLED=0 GOOS={{ DIST_OS }} GOARCH="$arch" go build -o "{{ DIST }}/app-{{ DIST_OS }}-$arch" .
+        CGO_ENABLED=0 GOOS={{ DIST_OS }} GOARCH="$arch" go build -ldflags="-w -s" -trimpath -o "{{ DIST }}/app-{{ DIST_OS }}-$arch" .
         echo ok
     done
     ls -l {{ DIST }}
 
-# 本机跑起来（HOST / PORT / READYZ_TOKEN / TZ 等直接走环境变量）
+# 本机跑起来（其余环境变量如 READYZ_TOKEN / TZ 直接走环境变量）
 run: frontend
-    DATA_DIR={{ justfile_directory() }}/.data go run .
+    HOST={{ HOST }} PORT={{ PORT }} DATA_DIR={{ DATA_DIR }} go run .
+
+# 停止本机上这份服务：按监听端口定位进程 → 确认确实属于本项目 → SIGINT 等它自己退
+stop:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    port="{{ PORT }}"
+    project="$(pwd -P)"
+    if ! ss -tlnH "sport = :$port" | grep -q .; then
+        echo "端口 $port 上没有监听进程"
+        exit 0
+    fi
+    mapfile -t pids < <(ss -tlnpH "sport = :$port" | grep -oP 'pid=\K[0-9]+' | sort -u)
+    if [ "${#pids[@]}" -eq 0 ]; then
+        echo "端口 $port 在监听，但看不到进程（多半属于别的用户）：用 sudo 自行确认" >&2
+        exit 1
+    fi
+    # 端口可能是别人的：只有 cwd 就是本项目才动手，否则把 pid 报出来让人自己判断
+    ours=(); foreign=()
+    for p in "${pids[@]}"; do
+        cwd="$(readlink "/proc/$p/cwd" 2>/dev/null || echo '?')"
+        if [ "$cwd" = "$project" ]; then ours+=("$p"); else foreign+=("$p"); fi
+    done
+    if [ "${#foreign[@]}" -gt 0 ]; then
+        echo "端口 $port 上的进程不属于本项目，拒绝停止：" >&2
+        for p in "${foreign[@]}"; do
+            echo "  pid=$p cwd=$(readlink "/proc/$p/cwd" 2>/dev/null || echo '?') cmd=$(tr '\0' ' ' < "/proc/$p/cmdline")" >&2
+        done
+        exit 1
+    fi
+    for p in "${ours[@]}"; do echo "  SIGINT → pid=$p $(tr '\0' ' ' < "/proc/$p/cmdline")"; done
+    kill -SIGINT "${ours[@]}"
+    for _ in $(seq 20); do
+        if ! ss -tlnH "sport = :$port" | grep -q .; then echo "端口 $port 已释放"; exit 0; fi
+        sleep 0.25
+    done
+    echo "5 秒后端口 $port 仍在监听；未强杀，请自行检查" >&2
+    exit 1
 
 # 提交前跑一遍：Go 的 vet + test，加前端的类型检查（缺前端依赖会按锁文件装一次）
 check: vet test

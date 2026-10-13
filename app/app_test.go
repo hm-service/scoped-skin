@@ -31,7 +31,7 @@ func openInstance(t *testing.T, mutate func(*Config)) *App {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	t.Cleanup(instance.Close)
+	t.Cleanup(func() { instance.Close() })
 	return instance
 }
 
@@ -115,7 +115,7 @@ func TestReopenKeepsExistingAccounts(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Open: %v", err)
 		}
-		t.Cleanup(instance.Close)
+		t.Cleanup(func() { instance.Close() })
 		return instance
 	}
 

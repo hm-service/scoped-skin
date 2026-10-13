@@ -3,8 +3,8 @@
 # ==========================================
 FROM --platform=$BUILDPLATFORM node:26-alpine AS frontend
 
-# 与 frontend/package.json 的 packageManager 保持一致（这条 Node 线里没有 corepack）
-ARG PNPM_VERSION=12.4.1
+# pnpm 版本与 .github/workflows 里的一致，取本机正式版
+ARG PNPM_VERSION=12.11.2
 RUN npm install -g pnpm@${PNPM_VERSION}
 
 WORKDIR /build/frontend
