@@ -3,6 +3,7 @@ package db_test
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -26,14 +27,16 @@ func TestLastAdminCannotBeDemotedToGuest(t *testing.T) {
 	}
 
 	for _, role := range []string{"guest", "normal"} {
-		updated, err := store.UpdateUser(admin.UUID, map[string]string{"role": role})
-		var invalid *core.ValidationError
-		if !errors.As(err, &invalid) || invalid.Key != "valid.last-admin" {
-			t.Errorf("把最后一个管理员降成 %s: err = %v，想要 *core.ValidationError{valid.last-admin}", role, err)
-		}
-		if updated != nil {
-			t.Errorf("降成 %s 被拒时不该返回改过的用户: %+v", role, updated)
-		}
+		t.Run(role, func(t *testing.T) {
+			updated, err := store.UpdateUser(admin.UUID, map[string]string{"role": role})
+			var invalid *core.ValidationError
+			if !errors.As(err, &invalid) || invalid.Key != "valid.last-admin" {
+				t.Errorf("把最后一个管理员降成 %s: err = %v，想要 *core.ValidationError{valid.last-admin}", role, err)
+			}
+			if updated != nil {
+				t.Errorf("降成 %s 被拒时不该返回改过的用户: %+v", role, updated)
+			}
+		})
 	}
 	// 被拒之后库里状态不能被动过
 	if after := store.User(admin.UUID); after == nil || after.Role != "admin" {
@@ -87,10 +90,12 @@ func TestUserLookupEdges(t *testing.T) {
 	if got := store.User(dashed); got == nil || got.UUID != steve.UUID {
 		t.Errorf("带横线的 UUID 应当能查到: %+v", got)
 	}
-	for _, bad := range []string{"", "   ", "not-a-uuid", "0123456789abcdef"} {
-		if got := store.User(bad); got != nil {
-			t.Errorf("非法 UUID %q 不该查到: %+v", bad, got)
-		}
+	for index, bad := range []string{"", "   ", "not-a-uuid", "0123456789abcdef"} {
+		t.Run(fmt.Sprintf("bad_%d", index), func(t *testing.T) {
+			if got := store.User(bad); got != nil {
+				t.Errorf("非法 UUID %q 不该查到: %+v", bad, got)
+			}
+		})
 	}
 }
 

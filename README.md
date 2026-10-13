@@ -29,12 +29,13 @@ Go 实现的 Minecraft 皮肤站（标准库 `net/http` + `modernc.org/sqlite`�
 just run                                   # 先构建前端，再以仓库根的 .data 为 DATA_DIR 启动；首次启动建号：admin / devpass123
 # 打开 http://127.0.0.1:8080，未登录会跳转 /auth
 ADMIN_PASSWORD='dev_pass_123' just run     # 覆盖开发密码（仅首次建号时生效；只收字母 / 数字 / 下划线）
+DATA_DIR=./.data_temp PORT=10080 just run  # 换数据目录与端口另起一份，变量写在 just run 前面
 just build                                 # 先构建前端，再交叉编译 linux/amd64 + linux/arm64 到 .dist/（纯静态，无 cgo）
 ```
 
 构建产物分两处，都不入库：
 
-- `just build` 出 `.dist/scoped-skin-linux-amd64` 与 `.dist/scoped-skin-linux-arm64`，不需要交叉工具链；没有本机架构的产物，本地跑用 `just run`；
+- `just build` 出 `.dist/app-linux-amd64` 与 `.dist/app-linux-arm64`，不需要交叉工具链；没有本机架构的产物，本地跑用 `just run`；
 - `just frontend` 只构建前端到 `frontend/dist/`（= `cd frontend && pnpm install --frozen-lockfile && pnpm build`），编译时才被 `go:embed` 嵌进二进制。
 
 改前端也可以 `cd frontend && pnpm dev`：Vite dev server 自己出页面（地址是 `/auth.html` 这种），`/api`、`/asset`、`/livez`、`/readyz` 反代到 127.0.0.1:8080。
@@ -71,15 +72,16 @@ just fmt         # go fmt ./...：只格式化本模块的包
 ```
 main.go  web.go            # 入口（环境变量 → 应用容器 → 路由 → 监听）；web.go 是站点外壳：页面路由表 + go:embed frontend/dist
 justfile  Dockerfile       # 项目命令：frontend / build / run / check / test / vet / fmt / clean；三段容器构建（前端 → Go → 运行时）
-k8s.yaml quadlet-kube.kube # podman kube play 的 Pod + PVC + ConfigMap（探针、只读根、丢全部 capability）；systemd quadlet 模板（%p 取单元名）
-api/                       # HTTP 层：中间件（日志 / 并发 / 安全头 / 语言 / 体积上限）、探针、/asset/* 的贴图字节、站点 API、yggdrasil/（规范接口）；页面与静态资源不在这里
+k8s.scoped-skin.yaml       # podman kube play 的 Pod + PVC + ConfigMap（liveness/readiness 探针、只读根、丢全部 capability）
+scoped-skin.kube           # systemd quadlet 模板：Yaml=./k8s.%p.yaml，%p 取单元名（也就是应用名）
+api/                       # HTTP 层：中间件（日志 / 并发 / 安全头 / 语言 / 体积上限）、探针、/api/assets/* 的贴图字节、站点 API、yggdrasil/（规范接口）；页面与静态资源不在这里
 app/                       # 应用容器：库 + 令牌表 + 会话 + 密钥 + 审计 + Argon2 闸门，及启动时的权限收紧
 core/                      # 纯逻辑：Argon2id、站点 token、内存会话、RSA、审计、文件权限、离线 UUID、校验
 db/                        # SQLite：打开 / 建表 / 就绪、账号、贴图与内置资源、收藏
 httpx/ i18n/ builtin/      # JSON 响应与客户端 IP、后端文案表、官方默认皮肤（编入二进制）
 internal/testenv/          # 测试脚手架：独立临时实例 + 复用的 RSA 密钥
 frontend/                  # 前端源码：pnpm + Vite + Vue 3 SFC + TypeScript；三个入口 index/auth/maintain.html，src/ 下 store、viewer（3D 封装）、组件与页面组件，全局样式在 src/style.css（设计变量与跨组件原语），组件自己的样式写在各自的 <style scoped> 里，产物 dist/ 不入库
-tools/                     # fetch_builtin.py（抓官方皮肤）、shot.mjs（CDP 截图，--pre-eval 先注入 JS 再打开页面）
+tools/                     # fetch_builtin.py（抓官方皮肤，一次性脚本）
 ```
 
 测试文件与源码同目录（`*_test.go`、`internal/testenv/`），不单列，站点外壳的用例在根目录 `web_test.go`。3D 预览对 skinview3d 做了哪些封装（限帧 / 可见性暂停 / 光照 / 平移与重置）写在 `frontend/src/viewer.ts` 顶部注释，逐条附实测数字。

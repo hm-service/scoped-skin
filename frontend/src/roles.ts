@@ -1,5 +1,5 @@
 /**
- * 身份组：与 DESIGN.md 5.1 的权限矩阵一一对应。
+ * 身份组：与权限矩阵一一对应。
  *
  *   guest  —— 只读：浏览 / 预览
  *   normal —— 上面这些 + 收藏、换装、上传贴图
@@ -19,7 +19,7 @@ export const ROLES: Role[] = ["guest", "normal", "admin"];
 /** 身份组的显示名；还没登录（role 为空）时原样回空串。 */
 export const roleLabel = (role: Role | ""): string => (role ? LABELS[role] : role);
 
-// 上传与「收藏 / 换装」在 DESIGN.md 5.1 里是两格，规则今天一致；留两个名字是为了将来能各改各的。
+// 上传与「收藏 / 换装」是两格，规则今天一致；留两个名字是为了将来能各改各的。
 export const canUpload = (role: Role | ""): boolean => role === "admin" || role === "normal";
 
 export const canWrite = (role: Role | ""): boolean => role === "admin" || role === "normal";

@@ -22,6 +22,9 @@
 | READYZ_TOKEN           | 空（不校验）           | `/readyz` 的 `?token=` 门槛，见 [3.2](#32-readyz)          |
 | MAX_API_CONCURRENCY    | `128`                  | API（含探针与贴图字节）的同时处理上限                      |
 | MAX_STATIC_CONCURRENCY | `64`                   | 静态页面与 `/assets/*` 的同时处理上限                      |
+| GOMEMLIMIT             | 不设（Go 自己决定）    | Go 的 GC 软上限；由 Go 运行时解析，应用不校验              |
+
+部署描述（`k8s.scoped-skin.yaml` 的 ConfigMap）按这张表填，例外两条：`ADMIN_USERNAME` / `ADMIN_PASSWORD` 是凭据，不进 ConfigMap，要固定就单独用 Secret 注入（留空则首个启动日志里给随机密码）；`READYZ_TOKEN` 同时出现在 `readinessProbe` 的 `?token=` 里，改的时候两处一起改。
 
 ### 1.2. 首次启动
 
@@ -36,7 +39,7 @@
 
 日志一律英文（`msg`、错误串与字段值）：它面向运维与容器运行时；用户可见的文案才走 i18n，见 [2.4 语言](#24-语言)。业务校验错误（`core.ValidationError` / `core.ConflictError`）在日志里给的是文案键与参数（如 `initialize admin account: valid.password.short(8)`），渲染成哪种语言只发生在 HTTP 响应里。
 
-访问日志只记页面、 `/api/*` 与 `/readyz`（带 token 门槛，`401` / `503` 值得留痕）。
+访问日志只记页面、`/api/*` 与 `/readyz`（带 token 门槛，`401` / `503` 值得留痕）；构建产物 `/assets/*` 与贴图字节 `/api/assets/*` 不记 —— 一次页面加载与 3D 预览就是十几条噪音。
 
 ### 1.4. 反向代理
 
@@ -104,7 +107,7 @@
 
 只要服务在运行就统一响应 `200 OK`，无响应体。
 
-### 3.4. /asset/{asset_id}
+### 3.4. /api/assets/{asset_id}
 
 内容寻址，返回指定的 asset 字节流。
 
@@ -178,17 +181,17 @@ flowchart LR
 - **角色绑定**：每个账号只有一个角色，`authenticate` 颁发的令牌始终已绑定，因此 `refresh` 携带 `selectedProfile` 一律回 `400 IllegalArgumentException`（规范中该操作要求原令牌未绑定角色）。
 - **进服暗号**：`serverId` 由服务端下发，`hasJoined` 核对一次即作废，所以不能重复调用（防重放）；`join` 时记下客户端 IP，`hasJoined` 带了 `ip` 就比对，对不上也算不通过。
 - **错误**：业务异常按规范返回 `403` + `{"error": "ForbiddenOperationException", "errorMessage": "..."}`（令牌无效 `Invalid token.`、凭据不对 `Invalid credentials. Invalid username or password.`）；一般 HTTP 异常的 `error` 取状态码的 Reason Phrase。
-- **贴图**：`textures` 属性 = `base64(JSON)`，`SKIN.url` 指向 [3.4 /asset/{asset_id}](#34-assetasset_id)（内容寻址、公开只读，客户端直接拉）；`kind` 映射到 `metadata.model`：`skin.steve` → `default`（正常手臂宽度）、`skin.alex` → `slim`（细手臂），`cape` 本就不是皮肤、不带 metadata；`unsigned=false` 时用 **RSA-SHA1** 对 base64 串签名，公钥即根元数据里的 `signaturePublickey`，私钥落在 `DATA_DIR/private.pem`（首次启动生成 4096 位）。
+- **贴图**：`textures` 属性 = `base64(JSON)`，`SKIN.url` 指向 [3.4 /api/assets/{asset_id}](#34-apiassetsasset_id)（内容寻址、公开只读，客户端直接拉）；`kind` 映射到 `metadata.model`：`skin.steve` → `default`（正常手臂宽度）、`skin.alex` → `slim`（细手臂），`cape` 本就不是皮肤、不带 metadata；`unsigned=false` 时用 **RSA-SHA1** 对 base64 串签名，公钥即根元数据里的 `signaturePublickey`，私钥落在 `DATA_DIR/private.pem`（首次启动生成 4096 位）。
 - **与站点登录的关系**：两套 token 互不相通 —— 站点 token 是 HMAC（密钥每次启动随机，重启即全部失效）；Yggdrasil 的 `accessToken` 是随机数、也只活在内存里。管理员在 `/maintain` 动过某个账号（删号 / 改 UUID / 改凭据）时，会按 uuid 把这个账号的 Yggdrasil 会话一并清掉。
 - **防爆破**：应用侧不做限流；`authenticate` / `signout` 依靠恒定请求时间 —— 无论账号存不存在，每次请求都至少消耗 1 秒才返回（[5.3 防爆破与加固措施](#53-防爆破与加固措施)），单个客户端的串行请求频率因此不超过 60 次/分钟。更严格的频率上限由反向代理承担（[1.4](#14-反向代理)）。
 - **profile 与签名细节**：`authenticate` 带 `requestUser=true` 时响应另含 `user`；profile 的 `id` 为无横线 UUID，接口亦接受带横线与大写的写法（查询宽容、写入严格），角色不存在回 `204` 而非 `403`；`unsigned` 默认 `true`（不带签名），仅显式 `unsigned=false` 时签名。textures 属性为 `base64(JSON)`，含 `timestamp`（Java 毫秒）、`profileId`、`profileName`；签名算法为 RSA-SHA1 + PKCS1v15，密钥对落在 `DATA_DIR/private.pem`（PKCS#8）与 `public.pem`（PKIX），首次启动以标准库 `crypto/rsa` 生成 4096 位后复用
-- **材质 URL 与 skinDomains**：材质 URL 以请求的 `Host` 拼接绝对地址，`X-Forwarded-Proto: https` 时用 https；`skinDomains` 白名单为请求所用域名加 `127.0.0.1` 与 `localhost`
+- **材质 URL 与 skinDomains**：材质 URL 以请求的 `Host` 拼接绝对地址，`X-Forwarded-Proto: https`（仅当连接对端落在 `TRUSTED_PROXIES` 网段里才认，见 [5.5](#55-源-ip-与反向代理)）时用 https；`skinDomains` 白名单为请求所用域名加 `127.0.0.1` 与 `localhost`
 - **`hasJoined` 的 IP 核对**：`ip` 不一致时返回 `204` **且不消费暗号**（避免一个抄错 IP 的查询把玩家挡在门外）。经反代或 NAT 时两端观察到的 IP 可能不同，此情形下不应开启 MC 服务端的 `prevent-proxy-connections`
 - **发现机制**：`GET /` 带响应头 `X-Authlib-Injector-API-Location: /api/yggdrasil`，把站点地址交给启动器即可自动定位服务
 
 ### 3.6. /api/*
 
-除上述定义以外的其他 API 端口，通常服务于特定的应用功能，无需详细了解。除 `login` 外，都需要 `Authorization: Bearer <token>`，否则 `401`；其中 `/api/admin/*` 还要求 `role = admin`，否则 `403`。
+除上述定义以外的其他 API 端口，通常服务于特定的应用功能，无需详细了解。除 `login` 外，都需要 `Authorization: Bearer <token>`，否则 `401`；其中 `/api/admin/*` 还要求 `role = admin`，否则 `403`。（`/api/assets/*` 不在此列：它是 [3.4](#34-apiassetsasset_id) 的贴图字节，公开只读、不鉴权。）
 
 返回里所有用户可见的文案（错误 `detail`）按请求的 `Accept-Language` 本地化（见 [2.4 语言](#24-语言)）。
 
@@ -210,7 +213,7 @@ flowchart LR
 | PATCH  | `/api/admin/users/{uuid}`        | Bearer admin | 改 UUID / 账号名 / 密码 / 游戏内名称 / 身份组                                        |
 | DELETE | `/api/admin/users/{uuid}`        | Bearer admin | 删除账号                                                                             |
 
-贴图条目（asset）的统一字段：`id`（= 规范化后字节的 sha256，见 [4.2 表：asset](#42-表asset)）、`kind`（`skin.steve` / `skin.alex` / `cape`，模型已并进这一列）、`category`（由 `kind` 推出的粗分类 `skin` / `cape`，列表筛选与前端分类用它）、`tags`、`upload_at`、`readonly`、`width`、`height`、`size`、`favorite`、`texture_url`（= `/asset/{id}`）。
+贴图条目（asset）的统一字段：`id`（= 规范化后字节的 sha256，见 [4.2 表：asset](#42-表asset)）、`kind`（`skin.steve` / `skin.alex` / `cape`，模型已并进这一列）、`category`（由 `kind` 推出的粗分类 `skin` / `cape`，列表筛选与前端分类用它）、`tags`、`upload_at`、`readonly`、`width`、`height`、`size`、`favorite`、`texture_url`（= `/api/assets/{id}`）。
 
 列表的 `q` 是模糊搜索：按空白切成多个查询词，每个词都要**子串命中**条目的某个标签（大小写不敏感，取交集）。排序先看命中档位 —— 前缀 → 中缀 → 后缀；一个词命中多个标签取最好那档，多个查询词取最差那档，同档才按上传时间倒序。
 
@@ -243,6 +246,8 @@ flowchart LR
 ## 4. 数据库
 
 本项目采用单个 SQLite 数据库存储所有数据，无外键约束设计，业务逻辑由代码保证。
+
+库文件里的表结构与代码里的建表语句不一致时（多一列、少一列、类型变了）启动直接失败：不做迁移、也不清库重建，删掉 `DATA_DIR` 下的 `app.db`（含 `-wal` / `-shm`）重启即可。
 
 ### 4.1. 表：user
 
@@ -309,7 +314,7 @@ flowchart LR
     pwd["Argon2id 校验<br/>login · authenticate"]
     manage["/api/admin/*<br/>增删账号 · 改凭据"]
     ygg["/api/yggdrasil<br/>内存会话 · RSA-SHA1 签名"]
-    assets["/asset/{asset_id}<br/>公开只读"]
+    assets["/api/assets/{asset_id}<br/>公开只读"]
   end
 
   subgraph store["DATA_DIR（可信）"]
@@ -346,13 +351,13 @@ flowchart LR
 | normal | ✅️           | ✅️    | ✅️              | ✅️        |          |          |
 | admin  | ✅️           | ✅️    | ✅️              | ✅️        | ✅️        | ✅️        |
 
-`guest` 是**只读身份组**：不允许修改任何持久化资源 —— 收藏、更换装备、上传、删除都要求 `admin` / `normal`；读接口（列表、标签、`/api/me`、预检、`/asset/*`）不受限。
+`guest` 是**只读身份组**：不允许修改任何持久化资源 —— 收藏、更换装备、上传、删除都要求 `admin` / `normal`；读接口（列表、标签、`/api/me`、预检、`/api/assets/*`）不受限。
 
 `role` 每次请求现查库，改动立即生效：已发出的 token 不因此作废，但下一次请求即被 `403` 挡下。最后一个管理员不可删除、不可降级。
 
 ### 5.2. 校验边界
 
-- 请求体上限 1 MiB：Content-Length 预校验 + `MaxBytesReader` 兜底，分块读达到上限直接返回 400；
+- 请求体上限 1 MiB：Content-Length 预校验 + `MaxBytesReader` 兜底，分块读达到上限直接返回 413；
 - `kind` 只接受 `skin.steve` / `skin.alex` / `cape`，模型已并进这一列（没有「自动判断」这一档，由前端判定后显式提交）；
 - 贴图入库前只校验 PNG 头、尺寸与能否解码，不做内容审核；入库前**解码后重新编码**（剥掉 PNG 里与位图无关的 chunk），`asset_id` 取的就是这串入库字节的 sha256；
 
@@ -371,7 +376,7 @@ flowchart LR
 
 - **恒定请求时间**：无论账号存在与否、密码对错，账号验证都至少等待 1 秒才返回，用来抹掉「不存在的账号秒回」这个时序侧信道，也顺带把单客户端的请求频率压到 60 次/分钟以下；
 - **Argon2id 并发上限**：同时进行的校验最多 4 个（`app.ArgonConcurrency`）。每次校验要吃 19 MiB，不限并发即等于放弃内存上限（实测 30 并发会把常驻内存从 18 MiB 抬到 513 MiB）；
-- **请求并发上限**：两半各一个独立的闸门，各用一份槽位、互不排队（超出的在闸门外等，客户端断开即直接放行）。API 那一半（`/api/*`、`/asset/*` 与探针）吃 `MAX_API_CONCURRENCY`（默认 `128`），避免 goroutine / SQLite / Argon2 同时被放开；静态那一半（页面与 `/assets/*`）吃 `MAX_STATIC_CONCURRENCY`（默认 `64`），只防止一次页面加载把内嵌文件同时读爆；
+- **请求并发上限**：两半各一个独立的闸门，各用一份槽位、互不排队（超出的在闸门外等，客户端断开即直接放行）。API 那一半（`/api/*` 与探针）吃 `MAX_API_CONCURRENCY`（默认 `128`），避免 goroutine / SQLite / Argon2 同时被放开；静态那一半（页面与 `/assets/*`）吃 `MAX_STATIC_CONCURRENCY`（默认 `64`），只防止一次页面加载把内嵌文件同时读爆；
 - **安全响应头**：所有响应都带 `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Frame-Options: DENY`。CSP 暂不引入（前端的模板在构建期编译，不再需要 `unsafe-eval`）；
 - **频率上限**：应用侧不做限流，由反向代理承担 —— 站点登录建议 `5r/m`，上传与 `authenticate` 建议 `30r/m`，并配 `limit_conn`；应用自身只保证上面那两个并发上限。
 
@@ -406,7 +411,7 @@ flowchart LR
 - **口令**：库中只保存 Argon2id 哈希（默认 `m=19456, t=2, p=1`）；失败一律「用户名或密码不正确」，不暴露账号是否存在。
 - **凭据变更即失效**：管理员改动某账号的 uuid / 账号名 / 密码后，该账号的站点 token 立即失效（内存 token 表按库中字段整表重算，同一进程内未被改动者不变）；其 Yggdrasil 会话一并清除，`/authserver/validate` 随即返回 `403`。删号与改 UUID 按 UUID 清，本次被改过的账号直接清。
 - **站点 token 的存放**：前端置于 `localStorage` 并放在 `Authorization` 头中 —— 不涉及 cookie，因而没有 CSRF 面；代价是 XSS 即等同于交出账号。
-- **贴图公开**：`/asset/{asset_id}` 不鉴权（`<img>` 无法附带自定义头，且 URL 本身即内容哈希）；这是皮肤系统能工作的前提，不属于遗漏。
+- **贴图公开**：`/api/assets/{asset_id}` 不鉴权（`<img>` 无法附带自定义头，且 URL 本身即内容哈希）；这是皮肤系统能工作的前提，不属于遗漏。
 
 ### 5.7. 设计取舍
 
@@ -442,7 +447,7 @@ flowchart TD
   login -->|失败| audit["审计：login 与写操作"]
   req --> who["服务端：token → uuid → 现查库取 role"]
   who --> gate{"闸门"}
-  gate -->|"读接口（匿名也放行）"| read["列表 · 标签 · 预览 · /asset/*"]
+  gate -->|"读接口（匿名也放行）"| read["列表 · 标签 · 预览 · /api/assets/*"]
   gate -->|"normal / admin"| write["收藏 · 换装 · 上传"]
   gate -->|admin| manage["删除贴图 · /api/admin/*"]
   gate -->|"401 / 403"| back["清 token 回 /auth"]

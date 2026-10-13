@@ -42,18 +42,20 @@ func TestUnauthenticatedRoutesRequireToken(t *testing.T) {
 		{http.MethodPost, "/api/admin/users", map[string]any{}},
 	}
 	for _, testCase := range cases {
-		recorder := testenv.Do(handler, testCase.method, testCase.path, testCase.body, "")
-		if recorder.Code != http.StatusUnauthorized {
-			t.Errorf("%s %s 状态码 = %d，想要 401（%s）",
-				testCase.method, testCase.path, recorder.Code, recorder.Body.String())
-			continue
-		}
-		if got := detail(t, recorder); got != "未登录" {
-			t.Errorf("%s %s detail = %q，想要 %q", testCase.method, testCase.path, got, "未登录")
-		}
-		if got := recorder.Header().Get("WWW-Authenticate"); got != "Bearer" {
-			t.Errorf("%s %s WWW-Authenticate = %q", testCase.method, testCase.path, got)
-		}
+		t.Run(testCase.method+" "+testCase.path, func(t *testing.T) {
+			recorder := testenv.Do(handler, testCase.method, testCase.path, testCase.body, "")
+			if recorder.Code != http.StatusUnauthorized {
+				t.Errorf("%s %s 状态码 = %d，想要 401（%s）",
+					testCase.method, testCase.path, recorder.Code, recorder.Body.String())
+				return
+			}
+			if got := detail(t, recorder); got != "未登录" {
+				t.Errorf("%s %s detail = %q，想要 %q", testCase.method, testCase.path, got, "未登录")
+			}
+			if got := recorder.Header().Get("WWW-Authenticate"); got != "Bearer" {
+				t.Errorf("%s %s WWW-Authenticate = %q", testCase.method, testCase.path, got)
+			}
+		})
 	}
 }
 
@@ -75,15 +77,17 @@ func TestMalformedJSONBodies(t *testing.T) {
 		{http.MethodPatch, "/api/admin/users/" + steveUUID, token},
 	}
 	for _, testCase := range cases {
-		recorder := rawRequest(handler, testCase.method, testCase.path, broken, testCase.token)
-		if recorder.Code != http.StatusBadRequest {
-			t.Errorf("%s %s 状态码 = %d，想要 400（%s）",
-				testCase.method, testCase.path, recorder.Code, recorder.Body.String())
-			continue
-		}
-		if got := detail(t, recorder); got != "请求体不是合法的 JSON" {
-			t.Errorf("%s %s detail = %q", testCase.method, testCase.path, got)
-		}
+		t.Run(testCase.method+" "+testCase.path, func(t *testing.T) {
+			recorder := rawRequest(handler, testCase.method, testCase.path, broken, testCase.token)
+			if recorder.Code != http.StatusBadRequest {
+				t.Errorf("%s %s 状态码 = %d，想要 400（%s）",
+					testCase.method, testCase.path, recorder.Code, recorder.Body.String())
+				return
+			}
+			if got := detail(t, recorder); got != "请求体不是合法的 JSON" {
+				t.Errorf("%s %s detail = %q", testCase.method, testCase.path, got)
+			}
+		})
 	}
 }
 
@@ -123,22 +127,24 @@ func TestAdminRouteTargetValidation(t *testing.T) {
 	missingUUID := strings.Repeat("f", 32)
 
 	for _, method := range []string{http.MethodPatch, http.MethodDelete} {
-		recorder := testenv.Do(handler, method, "/api/admin/users/not-a-uuid", nil, token)
-		if recorder.Code != http.StatusBadRequest {
-			t.Errorf("%s 非法 uuid 状态码 = %d，想要 400（%s）", method, recorder.Code, recorder.Body.String())
-		}
-		if got := detail(t, recorder); got != "UUID 必须是 32 位小写十六进制字符" {
-			t.Errorf("%s 非法 uuid detail = %q", method, got)
-		}
+		t.Run(method, func(t *testing.T) {
+			recorder := testenv.Do(handler, method, "/api/admin/users/not-a-uuid", nil, token)
+			if recorder.Code != http.StatusBadRequest {
+				t.Errorf("%s 非法 uuid 状态码 = %d，想要 400（%s）", method, recorder.Code, recorder.Body.String())
+			}
+			if got := detail(t, recorder); got != "UUID 必须是 32 位小写十六进制字符" {
+				t.Errorf("%s 非法 uuid detail = %q", method, got)
+			}
 
-		recorder = testenv.Do(handler, method, "/api/admin/users/"+missingUUID,
-			map[string]any{"role": "guest"}, token)
-		if recorder.Code != http.StatusNotFound {
-			t.Errorf("%s 查无此人状态码 = %d，想要 404（%s）", method, recorder.Code, recorder.Body.String())
-		}
-		if got := detail(t, recorder); got != "找不到该用户" {
-			t.Errorf("%s 查无此人 detail = %q", method, got)
-		}
+			recorder = testenv.Do(handler, method, "/api/admin/users/"+missingUUID,
+				map[string]any{"role": "guest"}, token)
+			if recorder.Code != http.StatusNotFound {
+				t.Errorf("%s 查无此人状态码 = %d，想要 404（%s）", method, recorder.Code, recorder.Body.String())
+			}
+			if got := detail(t, recorder); got != "找不到该用户" {
+				t.Errorf("%s 查无此人 detail = %q", method, got)
+			}
+		})
 	}
 
 	// 删一条不存在的贴图 → 404（不是 400 / 500）
@@ -160,7 +166,7 @@ func TestAssetReturns500WhenDatabaseIsDown(t *testing.T) {
 	if err := instance.Store.Close(); err != nil {
 		t.Fatalf("关库失败: %v", err)
 	}
-	recorder := testenv.Do(handler, http.MethodGet, "/asset/"+assetID, nil, "")
+	recorder := testenv.Do(handler, http.MethodGet, "/api/assets/"+assetID, nil, "")
 	if recorder.Code != http.StatusInternalServerError {
 		t.Fatalf("库挂了之后取贴图状态码 = %d，想要 500（%s）", recorder.Code, recorder.Body.String())
 	}
@@ -187,7 +193,7 @@ func TestHandlersWithoutLanguageMiddleware(t *testing.T) {
 	}
 }
 
-// 「谁在穿这张贴图」：删除前给管理员看的名单（DESIGN.md 3.6）。
+// 「谁在穿这张贴图」：删除前给管理员看的名单。
 func TestAssetUsersEndpoint(t *testing.T) {
 	instance, handler := newSite(t)
 	adminToken := testenv.Token(t, instance, "admin")
@@ -226,10 +232,12 @@ func TestAssetUsersEndpoint(t *testing.T) {
 
 	// 名单属于管理面：guest 与普通用户都看不到
 	for name, token := range map[string]string{"guest": guestToken, "steve": steveToken} {
-		recorder := testenv.Do(handler, http.MethodGet, "/api/items/"+assetID+"/users", nil, token)
-		if recorder.Code != http.StatusForbidden {
-			t.Errorf("%s 查名单 = %d，想要 403", name, recorder.Code)
-		}
+		t.Run(name, func(t *testing.T) {
+			recorder := testenv.Do(handler, http.MethodGet, "/api/items/"+assetID+"/users", nil, token)
+			if recorder.Code != http.StatusForbidden {
+				t.Errorf("%s 查名单 = %d，想要 403", name, recorder.Code)
+			}
+		})
 	}
 	// 不存在的贴图 → 404（与删除一致）
 	recorder = testenv.Do(handler, http.MethodGet,

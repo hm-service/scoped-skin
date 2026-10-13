@@ -77,7 +77,7 @@ func LoadSigningKeys(dataDir string) (*SigningKeys, error) {
 	if err := os.WriteFile(publicPath, publicBlock, PublicPerm); err != nil {
 		return nil, err
 	}
-	// 读进来的旧文件也顺手收紧（DESIGN.md 1.5）：私钥只有属主能读
+	// 读进来的旧文件也顺手收紧：私钥只有属主能读
 	if err := TightenPerm(privatePath, SecretPerm); err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -8,7 +9,7 @@ import (
 	"scoped-skin/core"
 )
 
-// DESIGN.md 4.1：password_hash 使用 Argon2id，参数 m=19456、t=2、p=1。
+// password_hash 使用 Argon2id，参数 m=19456、t=2、p=1。
 func TestHashPasswordIsArgon2idPHC(t *testing.T) {
 	t.Parallel()
 
@@ -37,14 +38,16 @@ func TestHashPasswordIsArgon2idPHC(t *testing.T) {
 	if core.VerifyPassword("steve124", hash) {
 		t.Fatalf("错误密码通过了")
 	}
-	for _, broken := range []string{"", "plain", "$argon2id$v=19$m=19456,t=2,p=1$onlyfour", "$argon2i$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA"} {
-		if core.VerifyPassword("steve123", broken) {
-			t.Fatalf("损坏的哈希串 %q 不该通过", broken)
-		}
+	for index, broken := range []string{"", "plain", "$argon2id$v=19$m=19456,t=2,p=1$onlyfour", "$argon2i$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA"} {
+		t.Run(fmt.Sprintf("%d_%s", index, broken), func(t *testing.T) {
+			if core.VerifyPassword("steve123", broken) {
+				t.Fatalf("损坏的哈希串 %q 不该通过", broken)
+			}
+		})
 	}
 }
 
-// DESIGN.md 5.3：账号验证恒定至少 1 秒。
+// 账号验证恒定至少 1 秒。
 func TestSleepUntilPadsSlowAndFastPaths(t *testing.T) {
 	t.Parallel()
 
@@ -63,7 +66,7 @@ func TestSleepUntilPadsSlowAndFastPaths(t *testing.T) {
 	}
 }
 
-// DESIGN.md 5：站点 token = HMAC-SHA256(进程密钥, uuid + "\x1f" + username + "\x1f" + password_hash)。
+// 站点 token = HMAC-SHA256(进程密钥, uuid + "\x1f" + username + "\x1f" + password_hash)。
 // 同一个进程里稳定；换一次启动（换密钥）就整批不一样 —— 库泄露也推不出 token。
 func TestTokenIsStableWithinProcessAndBoundToSecret(t *testing.T) {
 	t.Parallel()
@@ -81,14 +84,16 @@ func TestTokenIsStableWithinProcessAndBoundToSecret(t *testing.T) {
 		t.Fatalf("同一进程里同样的输入要算出同样的 token")
 	}
 	// 分隔符要挡得住「字段内容里塞分隔符」这种拼接歧义
-	for _, changed := range []core.Credential{
+	for index, changed := range []core.Credential{
 		{UUID: "uuid-2", Username: "steve", PasswordHash: "$argon2id$..."},
 		{UUID: "uuid-1", Username: "alex", PasswordHash: "$argon2id$..."},
 		{UUID: "uuid-1", Username: "steve", PasswordHash: "$argon2id$..!"},
 	} {
-		if store.TokenFor(changed) == first {
-			t.Fatalf("改一个字段就该换一个 token: %+v", changed)
-		}
+		t.Run(fmt.Sprintf("%d_%s_%s", index, changed.UUID, changed.Username), func(t *testing.T) {
+			if store.TokenFor(changed) == first {
+				t.Fatalf("改一个字段就该换一个 token: %+v", changed)
+			}
+		})
 	}
 
 	restarted, err := core.NewTokenStore()
@@ -119,7 +124,7 @@ func TestTokenStoreRebuildDropsChangedCredentials(t *testing.T) {
 		t.Fatalf("未知 token 应当解析成空")
 	}
 
-	// 改了 steve 的密码：他旧 token 失效，alex 的照旧（DESIGN.md 5「改凭据即踢下线」）
+	// 改了 steve 的密码：他旧 token 失效，alex 的照旧
 	store.Rebuild([]core.Credential{
 		{UUID: "uuid-steve", Username: "steve", PasswordHash: "hash-steve-v2"},
 		alex,
@@ -129,6 +134,39 @@ func TestTokenStoreRebuildDropsChangedCredentials(t *testing.T) {
 	}
 	if store.Resolve(alexToken) != "uuid-alex" {
 		t.Fatalf("没改动的账号 token 不应当受影响")
+	}
+}
+
+// token 查找走定长摘要：同长度、只差最后一位的近似 token 也要被拒。
+func TestTokenResolveRejectsLookalike(t *testing.T) {
+	t.Parallel()
+
+	store, err := core.NewTokenStore()
+	if err != nil {
+		t.Fatalf("NewTokenStore: %v", err)
+	}
+	credential := core.Credential{UUID: "uuid-steve", Username: "steve", PasswordHash: "hash-steve"}
+	token := store.Register(credential)
+	if got := store.Resolve(token); got != credential.UUID {
+		t.Fatalf("Resolve(正确 token) = %q，想要 %q", got, credential.UUID)
+	}
+
+	lookalike := token[:len(token)-1]
+	if token[len(token)-1] == '0' {
+		lookalike += "1"
+	} else {
+		lookalike += "0"
+	}
+	for name, candidate := range map[string]string{
+		"同长度近似": lookalike,
+		"截短":    token[:len(token)-1],
+		"加长":    token + "0",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := store.Resolve(candidate); got != "" {
+				t.Errorf("Resolve(%s) = %q，想要空", name, got)
+			}
+		})
 	}
 }
 
@@ -146,12 +184,14 @@ func TestOfflineUUIDMatchesJava(t *testing.T) {
 		t.Fatalf("OfflineUUID(Notch) = %q，想要 %q", got, cases["Notch"])
 	}
 	for name, value := range cases {
-		if len(value) != 32 || strings.Contains(value, "-") {
-			t.Fatalf("%s 的 UUID 应当是 32 位无横线: %q", name, value)
-		}
-		if value != strings.ToLower(value) {
-			t.Fatalf("%s 的 UUID 应当是小写: %q", name, value)
-		}
+		t.Run(name, func(t *testing.T) {
+			if len(value) != 32 || strings.Contains(value, "-") {
+				t.Fatalf("%s 的 UUID 应当是 32 位无横线: %q", name, value)
+			}
+			if value != strings.ToLower(value) {
+				t.Fatalf("%s 的 UUID 应当是小写: %q", name, value)
+			}
+		})
 	}
 	if core.OfflineUUID("steve") == core.OfflineUUID("alex") {
 		t.Fatalf("不同角色名不该撞 UUID")

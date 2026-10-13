@@ -9,7 +9,7 @@ import (
 	"scoped-skin/httpx"
 )
 
-// AliasPrefix 是挂在站点根上的 Yggdrasil 前缀（DESIGN.md 3.1 的发现头指向它）。
+// AliasPrefix 是挂在站点根上的 Yggdrasil 前缀。
 // 站点外壳（根目录 web.go）给首页发 X-Authlib-Injector-API-Location 时也用它。
 const AliasPrefix = "/api/yggdrasil"
 
@@ -51,7 +51,7 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 			"serverName":            "Scoped Skin",
 			"implementationName":    "scoped-skin",
 			"implementationVersion": s.App.Config.Version,
-			// 本站用的是账号名（不是邮箱）登录，据此告诉启动器可以填非邮箱凭证（DESIGN.md 3.6）
+			// 本站用的是账号名（不是邮箱）登录，据此告诉启动器可以填非邮箱凭证
 			"feature.non_email_login": true,
 		},
 		"skinDomains":        skinDomains(r),
@@ -81,17 +81,20 @@ func skinDomains(r *http.Request) []string {
 }
 
 // assetURL 拼贴图的绝对地址；客户端会直接来拉，所以必须是绝对 URL。
-func assetURL(r *http.Request, assetID string) string {
-	return scheme(r) + "://" + r.Host + "/asset/" + assetID
+func (s *Server) assetURL(r *http.Request, assetID string) string {
+	return s.scheme(r) + "://" + r.Host + "/api/assets/" + assetID
 }
 
-// scheme 认 TLS 连接与反向代理给的 X-Forwarded-Proto（DESIGN.md：公网部署需套 TLS 反代）。
-func scheme(r *http.Request) string {
+// scheme 认 TLS 连接与可信反向代理给的 X-Forwarded-Proto；对端不可信时那只是请求方的
+// 自称，只按连接本身的 TLS 状态判断。
+func (s *Server) scheme(r *http.Request) string {
 	if r.TLS != nil {
 		return "https"
 	}
-	if forwarded := r.Header.Get("X-Forwarded-Proto"); forwarded != "" {
-		return strings.TrimSpace(strings.Split(forwarded, ",")[0])
+	if s.App.PeerTrusted(r) {
+		if forwarded := r.Header.Get("X-Forwarded-Proto"); forwarded != "" {
+			return strings.TrimSpace(strings.Split(forwarded, ",")[0])
+		}
 	}
 	return "http"
 }

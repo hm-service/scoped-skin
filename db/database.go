@@ -1,11 +1,10 @@
-// Package db 是 SQLite 存储层：单库、无外键约束，一致性由代码保证（DESIGN.md 4）。
+// Package db 是 SQLite 存储层：单库、无外键约束，一致性由代码保证。
 // asset 里 readonly = 1 的是随包发行的官方默认皮肤（用户不能编辑 / 删除）。
 package db
 
 import (
 	"database/sql"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -44,12 +43,12 @@ CREATE TABLE IF NOT EXISTS favorite (
     asset  TEXT NOT NULL    -- asset.asset_id
 );
 
--- asset 上不建索引（DESIGN.md 4.2）：库就那么大，列表查询本来就要全表扫一遍再按
+-- asset 上不建索引：库就那么大，列表查询本来就要全表扫一遍再按
 -- upload_at 排序，按 kind 建索引既省不下多少，还白搭写放大。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_favorite_player_asset ON favorite (player, asset);
 `
 
-// expected 是期望的列集合；启动时校验，不一致就直接重建（原型不做迁移）。
+// expected 是期望的列集合；启动时校验，对不上就报错退出，不迁移也不重建。
 var expected = map[string][]string{
 	"user":     {"id", "uuid", "role", "player_name", "username", "password_hash", "skin", "cape"},
 	"asset":    {"id", "asset_id", "kind", "readonly", "upload_at", "tags", "data"},
@@ -65,7 +64,7 @@ type Store struct {
 // Open 打开（必要时创建）数据库，保证表结构是当前版本。
 func Open(path string) (*Store, error) {
 	if dir := filepath.Dir(path); dir != "" && dir != "." {
-		// DESIGN.md 1.5：数据目录只有属主能进
+		// 数据目录只有属主能进
 		if err := os.MkdirAll(dir, core.DataDirPerm); err != nil {
 			return nil, err
 		}
@@ -82,11 +81,11 @@ func Open(path string) (*Store, error) {
 	handle.SetMaxOpenConns(1)
 	handle.SetMaxIdleConns(1)
 	store := &Store{db: handle}
-	if err := store.migrate(); err != nil {
+	if err := store.ensureSchema(); err != nil {
 		handle.Close()
 		return nil, err
 	}
-	// migrate 之后 -wal / -shm 已经出现，一起收紧（老库也顺带修正）
+	// 建表之后 -wal / -shm 已经出现，一起收紧（老库也顺带修正）
 	for _, name := range []string{path, path + "-wal", path + "-shm"} {
 		if err := core.TightenPerm(name, core.SecretPerm); err != nil {
 			handle.Close()
@@ -109,7 +108,7 @@ func createPrivateFile(path string) error {
 
 func (s *Store) Close() error { return s.db.Close() }
 
-// 探针表不在 DESIGN.md 的三张表里、schema 校验也不看它，所以不会干扰业务。
+// 探针表不在三张业务表里、schema 校验也不看它，所以不会干扰业务。
 func (s *Store) Ready() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -125,7 +124,8 @@ func (s *Store) Ready() error {
 	return nil
 }
 
-func (s *Store) migrate() error {
+// ensureSchema 建出缺失的表，再核对列集合；对不上就报错返回，交给调用方退出。
+func (s *Store) ensureSchema() error {
 	if _, err := s.db.Exec(schema); err != nil {
 		return err
 	}
@@ -137,16 +137,8 @@ func (s *Store) migrate() error {
 		if slices.Compare(slices.Sorted(slices.Values(actual)), slices.Sorted(slices.Values(columns))) == 0 {
 			continue
 		}
-		slog.Warn("schema differs from DESIGN.md, rebuilding database", slog.String("table", table))
-		for _, name := range []string{"favorite", "asset", "user"} {
-			if _, err := s.db.Exec("DROP TABLE IF EXISTS " + name); err != nil {
-				return err
-			}
-		}
-		if _, err := s.db.Exec(schema); err != nil {
-			return err
-		}
-		return nil
+		return fmt.Errorf("table %s schema mismatch (have %v, want %v): delete the database file under DATA_DIR and restart",
+			table, actual, columns)
 	}
 	return nil
 }

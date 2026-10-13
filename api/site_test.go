@@ -94,7 +94,7 @@ func doUpload(t *testing.T, handler http.Handler, token string, fields [][2]stri
 	return recorder
 }
 
-// encodePNG 现场编码一张 width×height 的 PNG（DESIGN.md 的最小角色皮肤是 64×64）。
+// encodePNG 现场编码一张 width×height 的 PNG。
 func encodePNG(t *testing.T, width, height int) []byte {
 	t.Helper()
 	canvas := image.NewRGBA(image.Rect(0, 0, width, height))
@@ -215,9 +215,12 @@ func TestLogin(t *testing.T) {
 		if got := detail(t, recorder); got != "用户名或密码不正确" {
 			t.Errorf("detail = %q，想要 %q", got, "用户名或密码不正确")
 		}
+		if got := recorder.Header().Get("WWW-Authenticate"); got != "Bearer" {
+			t.Errorf("WWW-Authenticate = %q，想要 Bearer", got)
+		}
 	})
 
-	// DESIGN.md 5.3：应用不做限流（连按 IP 的也没有），这活交给反向代理；连打多次也不该出 429。
+	// 应用不做限流（连按 IP 的也没有），这活交给反向代理；连打多次也不该出 429。
 	t.Run("不限流", func(t *testing.T) {
 		_, handler := newSite(t)
 		for attempt := 1; attempt <= 6; attempt++ {
@@ -316,9 +319,9 @@ func TestUploadSkin(t *testing.T) {
 	if len(assetID) != 64 {
 		t.Fatalf("id = %q，想要 64 位 hex", assetID)
 	}
-	served := testenv.Do(handler, http.MethodGet, "/asset/"+assetID, nil, "")
+	served := testenv.Do(handler, http.MethodGet, "/api/assets/"+assetID, nil, "")
 	if got := digestHex(served.Body.Bytes()); got != assetID {
-		t.Errorf("/asset/%s 的字节 sha256 = %s", assetID, got)
+		t.Errorf("/api/assets/%s 的字节 sha256 = %s", assetID, got)
 	}
 
 	// 同一份内容改标签与 kind：只覆盖那一条，updated
@@ -362,7 +365,7 @@ func TestUploadSkin(t *testing.T) {
 	}
 }
 
-// DESIGN.md 3.6：预检把原图（base64）一起带上来，由服务端自己校验并自己算 asset_id，
+// 预检把原图（base64）一起带上来，由服务端自己校验并自己算 asset_id，
 // 再把这个 ID 回给前端 —— 入库字节是重编码过的，前端算不出它。
 func TestPrecheckValidatesPayload(t *testing.T) {
 	instance, handler := newSite(t)
@@ -556,12 +559,14 @@ func TestAdminUsers(t *testing.T) {
 
 	// 账号名只收小写字母 + 数字 + @ + .：大写、下划线、空格都在门外
 	for _, bad := range []string{"Tester", "test er", "测试", "test-er"} {
-		recorder := testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
-			"username": bad, "password": "tester123", "player_name": "tester2", "role": "normal",
-		}, adminToken)
-		if recorder.Code != http.StatusBadRequest || detail(t, recorder) != "账号名只能是小写字母、数字、@、. 和 _" {
-			t.Errorf("账号名 %q = %d（%s）", bad, recorder.Code, recorder.Body.String())
-		}
+		t.Run(bad, func(t *testing.T) {
+			recorder := testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
+				"username": bad, "password": "tester123", "player_name": "tester2", "role": "normal",
+			}, adminToken)
+			if recorder.Code != http.StatusBadRequest || detail(t, recorder) != "账号名只能是小写字母、数字、@、. 和 _" {
+				t.Errorf("账号名 %q = %d（%s）", bad, recorder.Code, recorder.Body.String())
+			}
+		})
 	}
 
 	// 创建时可以指定 uuid：带横线的小写照收并归一成 32 位无横线小写
@@ -673,7 +678,7 @@ func TestProbesAndAsset(t *testing.T) {
 	}
 
 	assetID := firstItem(t, handler, token, "skin")["id"].(string)
-	asset := testenv.Do(handler, http.MethodGet, "/asset/"+assetID, nil, "")
+	asset := testenv.Do(handler, http.MethodGet, "/api/assets/"+assetID, nil, "")
 	if asset.Code != http.StatusOK {
 		t.Fatalf("/asset 状态码 = %d，想要 200", asset.Code)
 	}
@@ -696,15 +701,15 @@ func TestRequestSizeLimit(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("状态码 = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("状态码 = %d，想要 413（%s）", recorder.Code, recorder.Body.String())
 	}
 	if got := detail(t, recorder); got != "请求体不能超过 1 MB" {
 		t.Errorf("detail = %q，想要 %q", got, "请求体不能超过 1 MB")
 	}
 }
 
-// DESIGN.md 2.4：站点 API 的用户可见文案按请求的 Accept-Language 走，认不出来就用简体中文。
+// 站点 API 的用户可见文案按请求的 Accept-Language 走，认不出来就用简体中文。
 func TestLanguageNegotiation(t *testing.T) {
 	instance := testenv.New(t)
 	handler := api.NewHandler(instance)
@@ -795,7 +800,7 @@ func TestLanguageNegotiation(t *testing.T) {
 	}
 }
 
-// ── 公网部署相关的加固点（见 DESIGN.md 第 5 节） ────────────────────────────────
+// ── 公网部署相关的加固点 ────────────────────────────────
 
 // 三个静态安全头要在所有响应上都出现（JSON、图片、探针一视同仁）。
 // 页面与 /assets/* 上的同一份头由站点外壳那边测（根目录 web_test.go）—— 中间件是同一层。
@@ -803,17 +808,19 @@ func TestSecurityHeaders(t *testing.T) {
 	_, handler := newSite(t)
 
 	for _, path := range []string{"/livez", "/api/nope", "/readyz"} {
-		recorder := testenv.Do(handler, http.MethodGet, path, nil, "")
-		header := recorder.Header()
-		if header.Get("X-Content-Type-Options") != "nosniff" {
-			t.Errorf("%s: X-Content-Type-Options = %q", path, header.Get("X-Content-Type-Options"))
-		}
-		if header.Get("Referrer-Policy") != "no-referrer" {
-			t.Errorf("%s: Referrer-Policy = %q", path, header.Get("Referrer-Policy"))
-		}
-		if header.Get("X-Frame-Options") != "DENY" {
-			t.Errorf("%s: X-Frame-Options = %q", path, header.Get("X-Frame-Options"))
-		}
+		t.Run(path, func(t *testing.T) {
+			recorder := testenv.Do(handler, http.MethodGet, path, nil, "")
+			header := recorder.Header()
+			if header.Get("X-Content-Type-Options") != "nosniff" {
+				t.Errorf("%s: X-Content-Type-Options = %q", path, header.Get("X-Content-Type-Options"))
+			}
+			if header.Get("Referrer-Policy") != "no-referrer" {
+				t.Errorf("%s: Referrer-Policy = %q", path, header.Get("Referrer-Policy"))
+			}
+			if header.Get("X-Frame-Options") != "DENY" {
+				t.Errorf("%s: X-Frame-Options = %q", path, header.Get("X-Frame-Options"))
+			}
+		})
 	}
 }
 
@@ -822,13 +829,15 @@ func TestProbes(t *testing.T) {
 	instance, handler := newSite(t)
 
 	for _, path := range []string{"/livez", "/readyz"} {
-		recorder := testenv.Do(handler, http.MethodGet, path, nil, "")
-		if recorder.Code != http.StatusOK {
-			t.Fatalf("%s 状态码 = %d", path, recorder.Code)
-		}
-		if body := recorder.Body.String(); body != "" {
-			t.Errorf("%s 响应体 = %q，想要空", path, body)
-		}
+		t.Run(path, func(t *testing.T) {
+			recorder := testenv.Do(handler, http.MethodGet, path, nil, "")
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("%s 状态码 = %d", path, recorder.Code)
+			}
+			if body := recorder.Body.String(); body != "" {
+				t.Errorf("%s 响应体 = %q，想要空", path, body)
+			}
+		})
 	}
 
 	if err := instance.Store.Close(); err != nil {
@@ -843,8 +852,8 @@ func TestProbes(t *testing.T) {
 	}
 }
 
-// DESIGN.md 5.5：只有对端在 TRUSTED_PROXIES 里时才认反代头，访问日志里的 IP 跟着变。
-// 这里用 /readyz 而不是 /livez —— 后者与静态资源刻意不写访问日志（DESIGN.md 1.3）。
+// 只有对端在 TRUSTED_PROXIES 里时才认反代头，访问日志里的 IP 跟着变。
+// 这里用 /readyz 而不是 /livez —— 后者与静态资源刻意不写访问日志。
 func TestClientIPFromTrustedProxy(t *testing.T) {
 	instance := testenv.NewWith(t, func(cfg *app.Config) { cfg.TrustedProxies = "192.0.2.1/32" })
 	handler := api.NewHandler(instance)
@@ -872,7 +881,7 @@ func TestClientIPFromTrustedProxy(t *testing.T) {
 	}
 }
 
-// DESIGN.md 4.2：标签数量与单条长度都有上限，文案里的数字直接跟着常量走。
+// 标签数量与单条长度都有上限，文案里的数字直接跟着常量走。
 func TestTagLimits(t *testing.T) {
 	instance, handler := newSite(t)
 	token := testenv.Token(t, instance, "admin")
@@ -911,7 +920,7 @@ func TestTagLimits(t *testing.T) {
 	}
 }
 
-// DESIGN.md 5.4：上传与删除贴图要留审计，带上操作者 uuid。
+// 上传与删除贴图要留审计，带上操作者 uuid。
 func TestAssetChangesAreAudited(t *testing.T) {
 	instance, handler := newSite(t)
 	admin := instance.Store.UserByUsername("admin")

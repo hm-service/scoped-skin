@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"image"
 	"image/color"
@@ -101,7 +102,7 @@ func TestEnsureBuiltinsIsIdempotent(t *testing.T) {
 		if item.Category != "skin" || item.Width != 64 || item.Height != 64 {
 			t.Fatalf("条目字段不对: %+v", item)
 		}
-		if item.TextureURL != "/asset/"+item.ID || len(item.ID) != 64 {
+		if item.TextureURL != "/api/assets/"+item.ID || len(item.ID) != 64 {
 			t.Fatalf("内容寻址字段不对: %+v", item)
 		}
 		if len(item.Tags) == 0 {
@@ -184,15 +185,17 @@ func TestUserCRUD(t *testing.T) {
 		t.Fatalf("只差大小写的重名账号不该建得出来")
 	}
 	// 唯一约束（改自己的 uuid 是空操作，不算冲突，所以拿别人的来撞）
-	for _, clash := range []map[string]string{
+	for index, clash := range []map[string]string{
 		{"username": "steve"},
 		{"player_name": "Steve"},
 		{"uuid": store.UserByUsername("alex").UUID},
 	} {
-		_, err := store.UpdateUser(created.UUID, clash)
-		if _, ok := errors.AsType[*core.ConflictError](err); !ok {
-			t.Fatalf("%v 应当撞唯一约束，实际 %v", clash, err)
-		}
+		t.Run(fmt.Sprintf("clash_%d", index), func(t *testing.T) {
+			_, err := store.UpdateUser(created.UUID, clash)
+			if _, ok := errors.AsType[*core.ConflictError](err); !ok {
+				t.Fatalf("%v 应当撞唯一约束，实际 %v", clash, err)
+			}
+		})
 	}
 	if _, err := store.CreateUser("steve", "x", "steve2", "normal"); err == nil {
 		t.Fatalf("重名账号不该建得出来")
@@ -243,7 +246,7 @@ func TestUserCRUD(t *testing.T) {
 	}
 }
 
-// DESIGN.md 5：最后一个管理员不允许删除或降级，避免把自己锁在门外。
+// 最后一个管理员不允许删除或降级，避免把自己锁在门外。
 func TestLastAdminIsProtected(t *testing.T) {
 	t.Parallel()
 	store := openStore(t)
@@ -337,14 +340,18 @@ func TestUploadAndUpdateTexture(t *testing.T) {
 	}
 	// 只收默认尺寸：皮肤必须正好 64×64，披风必须正好 64×32
 	for _, size := range [][2]int{{32, 32}, {64, 32}, {128, 128}, {512, 512}} {
-		if _, _, err := store.AddUpload("skin.steve", nil, pngBytes(t, size[0], size[1])); err == nil {
-			t.Fatalf("皮肤 %d×%d 不该通过", size[0], size[1])
-		}
+		t.Run(fmt.Sprintf("skin_%d_%d", size[0], size[1]), func(t *testing.T) {
+			if _, _, err := store.AddUpload("skin.steve", nil, pngBytes(t, size[0], size[1])); err == nil {
+				t.Fatalf("皮肤 %d×%d 不该通过", size[0], size[1])
+			}
+		})
 	}
 	for _, size := range [][2]int{{64, 64}, {128, 64}, {32, 64}} {
-		if _, _, err := store.AddUpload("cape", nil, pngBytes(t, size[0], size[1])); err == nil {
-			t.Fatalf("披风 %d×%d 不该通过", size[0], size[1])
-		}
+		t.Run(fmt.Sprintf("cape_%d_%d", size[0], size[1]), func(t *testing.T) {
+			if _, _, err := store.AddUpload("cape", nil, pngBytes(t, size[0], size[1])); err == nil {
+				t.Fatalf("披风 %d×%d 不该通过", size[0], size[1])
+			}
+		})
 	}
 	// 只有 IHDR、没有图像数据（头合法但解不开）
 	var headerOnly bytes.Buffer
@@ -448,10 +455,12 @@ func TestCreateUserWithUUID(t *testing.T) {
 		t.Fatalf("空 uuid 应当按角色名推导: %+v (%v)", derived, err)
 	}
 
-	for _, bad := range []string{"not-a-uuid", strings.Repeat("0", 31), strings.Repeat("g", 32)} {
-		if _, err := store.CreateUserWithUUID("bad@example.com", "hunter2x", "BadUuid", "normal", bad); err == nil {
-			t.Errorf("非法 uuid %q 不该通过", bad)
-		}
+	for index, bad := range []string{"not-a-uuid", strings.Repeat("0", 31), strings.Repeat("g", 32)} {
+		t.Run(fmt.Sprintf("bad_%d", index), func(t *testing.T) {
+			if _, err := store.CreateUserWithUUID("bad@example.com", "hunter2x", "BadUuid", "normal", bad); err == nil {
+				t.Errorf("非法 uuid %q 不该通过", bad)
+			}
+		})
 	}
 
 	_, err = store.CreateUserWithUUID("clash@example.com", "hunter2x", "ClashUuid", "normal", explicit)
@@ -607,9 +616,11 @@ func TestListSearchRanksByMatchPosition(t *testing.T) {
 		t.Fatalf("「蓝」应当命中 3 条: %v", found)
 	}
 	for index, want := range []db.Item{prefix, infix, suffix} {
-		if found[index].ID != want.ID {
-			t.Fatalf("第 %d 条 = %v，想要 %v", index+1, found[index].Tags, want.Tags)
-		}
+		t.Run(fmt.Sprintf("rank_%d", index+1), func(t *testing.T) {
+			if found[index].ID != want.ID {
+				t.Fatalf("第 %d 条 = %v，想要 %v", index+1, found[index].Tags, want.Tags)
+			}
+		})
 	}
 
 	// 每一项查询词都要命中：这个条目是「前缀 + 后缀」，取最差档
@@ -687,8 +698,8 @@ func TestReady(t *testing.T) {
 	}
 }
 
-// 原型的规矩：表结构和 DESIGN.md 对不上就直接重建，不做迁移。
-func TestSchemaMismatchRebuilds(t *testing.T) {
+// 表结构对不上必须直接报错：不重建、不迁移，旧库原样留着等人处理。
+func TestSchemaMismatchFailsOpen(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "app.db")
@@ -699,68 +710,52 @@ func TestSchemaMismatchRebuilds(t *testing.T) {
 	seedUsers(t, store)
 	store.Close()
 
-	// 把 user 表改成旧版本的样子
+	// 把 favorite 换成旧版本的样子，并留一条只在这个版本里才有的数据
 	handle, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatalf("直连数据库失败: %v", err)
 	}
-	if _, err := handle.Exec("DROP TABLE user"); err != nil {
+	if _, err := handle.Exec("DROP TABLE favorite"); err != nil {
 		t.Fatalf("改表失败: %v", err)
 	}
-	if _, err := handle.Exec("CREATE TABLE user (id INTEGER PRIMARY KEY, username TEXT)"); err != nil {
+	if _, err := handle.Exec("CREATE TABLE favorite (id INTEGER PRIMARY KEY, player TEXT, asset TEXT, note TEXT)"); err != nil {
 		t.Fatalf("改表失败: %v", err)
+	}
+	if _, err := handle.Exec("INSERT INTO favorite (player, asset, note) VALUES ('steve', 'x', 'keep')"); err != nil {
+		t.Fatalf("插旧数据失败: %v", err)
 	}
 	handle.Close()
 
 	reopened, err := db.Open(path)
-	if err != nil {
-		t.Fatalf("重开数据库失败: %v", err)
+	if err == nil {
+		reopened.Close()
+		t.Fatalf("表结构不一致时 Open 应当报错")
 	}
-	defer reopened.Close()
-	columns := map[string]bool{}
+	if !strings.Contains(err.Error(), "favorite") || !strings.Contains(err.Error(), "DATA_DIR") {
+		t.Fatalf("错误信息应当点出表名并交代运维怎么处理: %v", err)
+	}
+
+	// 库文件没被碰过：旧表结构、旧行、账号都还在
 	handle, err = sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatalf("直连数据库失败: %v", err)
 	}
 	defer handle.Close()
-	rows, err := handle.Query("PRAGMA table_info(user)")
-	if err != nil {
-		t.Fatalf("查表结构失败: %v", err)
+	var note string
+	if err := handle.QueryRow("SELECT note FROM favorite").Scan(&note); err != nil || note != "keep" {
+		t.Fatalf("报错之后旧数据被动过: %q (%v)", note, err)
 	}
-	for rows.Next() {
-		var (
-			cid, notnull, pk int
-			name, ctype      string
-			dflt             any
-		)
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-			t.Fatalf("读表结构失败: %v", err)
-		}
-		columns[name] = true
+	var users int
+	if err := handle.QueryRow("SELECT COUNT(*) FROM user").Scan(&users); err != nil || users != 6 {
+		t.Fatalf("报错之后账号应当原样保留 = %d (%v)", users, err)
 	}
-	rows.Close()
-	for _, wanted := range []string{"uuid", "role", "player_name", "username", "password_hash", "skin", "cape"} {
-		if !columns[wanted] {
-			t.Fatalf("重建后的 user 表缺少 %s: %v", wanted, columns)
-		}
-	}
-	// 重建之后账号是空的（数据不保留），需要重新灌
-	if users, _ := reopened.Users(); len(users) != 0 {
-		t.Fatalf("重建后不该保留旧数据: %d", len(users))
-	}
-	seedUsers(t, reopened)
-	if len(mustUsers(t, reopened)) != 6 {
-		t.Fatalf("重建后应当能重新灌进 6 个账号")
-	}
-}
 
-func mustUsers(t *testing.T, store *db.Store) []db.User {
-	t.Helper()
-	users, err := store.Users()
+	// 结构匹配的新库照常打开
+	fresh, err := db.Open(filepath.Join(t.TempDir(), "app.db"))
 	if err != nil {
-		t.Fatalf("列账号失败: %v", err)
+		t.Fatalf("结构匹配的库应当能打开: %v", err)
 	}
-	return users
+	defer fresh.Close()
 }
 
 func builtinItem(t *testing.T, store *db.Store) db.Item {
@@ -778,7 +773,7 @@ func builtinItem(t *testing.T, store *db.Store) db.Item {
 	return db.Item{}
 }
 
-// DESIGN.md 1.5：建库时就把目录与库文件收到 0700 / 0600。
+// 建库时就把目录与库文件收到 0700 / 0600。
 func TestOpenHardensPermissions(t *testing.T) {
 	t.Parallel()
 
@@ -798,12 +793,14 @@ func TestOpenHardensPermissions(t *testing.T) {
 		t.Fatalf("目录权限 = %o，想要 %o", got, core.DataDirPerm)
 	}
 	for _, name := range []string{"app.db", "app.db-wal", "app.db-shm"} {
-		info, err := os.Stat(filepath.Join(dir, name))
-		if err != nil {
-			t.Fatalf("stat %s 失败: %v", name, err)
-		}
-		if got := info.Mode().Perm(); got != core.SecretPerm {
-			t.Fatalf("%s 权限 = %o，想要 %o", name, got, core.SecretPerm)
-		}
+		t.Run(name, func(t *testing.T) {
+			info, err := os.Stat(filepath.Join(dir, name))
+			if err != nil {
+				t.Fatalf("stat %s 失败: %v", name, err)
+			}
+			if got := info.Mode().Perm(); got != core.SecretPerm {
+				t.Fatalf("%s 权限 = %o，想要 %o", name, got, core.SecretPerm)
+			}
+		})
 	}
 }

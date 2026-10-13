@@ -13,38 +13,38 @@ import (
 	"scoped-skin/i18n"
 )
 
-// DESIGN.md 4.1 / 4.2 里的枚举量与字段上限。
+// 字段的枚举量与上限。
 const (
 	MaxUsernameLength = 32
 
-	// DESIGN.md 5.2：分块读（或 base64 解码后）超过这个上限就拒。哪怕 64×64 RGBA
+	// 分块读（或 base64 解码后）超过这个上限就拒。哪怕 64×64 RGBA
 	// 满熵（压不动）也才 16.5 KiB，32 KiB 留了一倍余量。
 	MaxUploadBytes = 32 * 1024
 
-	// DESIGN.md 4.1：密码长度区间。字符集见 passwordPattern —— 白名单是为了挡住
+	// 密码长度区间。字符集见 passwordPattern —— 白名单是为了挡住
 	// 「复制粘贴带进来的零宽空格 / 不可见字符」：这类字符用户自己都复现不出来，
 	// 最后就变成「密码明明对却登不上」。上限 64 对密码短语也够。
 	MinPasswordLength = 8
 	MaxPasswordLength = 64
 
-	// DESIGN.md 4.1：游戏内角色名的长度区间。上限沿用 16（与正版一致的量级），
+	// 游戏内角色名的长度区间。上限沿用 16（与正版一致的量级），
 	// 下限 3 是为了别出现一个字符的名字；字符集见 playerNamePattern。
 	MinPlayerNameLength = 3
 	MaxPlayerNameLength = 16
 
-	// DESIGN.md 3.6：列表搜索串（q）的长度上限。搜索串是「若干标签用空白分隔」，
+	// 列表搜索串（q）的长度上限。搜索串是「若干标签用空白分隔」，
 	// 一条标签最长 MaxTagLength、最多 MaxTagsPerAsset 条，256 是它们的宽松上界 ——
 	// 目的是别让一个 1 MiB 的查询串进去拼出几万条 LIKE。
 	MaxQueryLength = 256
 
-	// DESIGN.md 4.2：贴图用标签代替自由命名（库里已有的标签即词表，也可随时手动输入），
+	// 贴图用标签代替自由命名（库里已有的标签即词表，也可随时手动输入），
 	// 但数量与单条长度都要有上限，否则标签栏就能拿来塞存储。上限按「一屏看得完」定：
 	// 卡片上只放得下前几个，其余的进悬浮面板，8 个是列表与筛选都还舒服的量级。
 	MaxTagsPerAsset = 8
 	MaxTagLength    = 32
 )
 
-// Kinds / Categories / Roles 是 DESIGN.md 4.2 与 5.1 的枚举量。
+// Kinds / Categories / Roles 是 与 5.1 的枚举量。
 //
 // `kind` 是库里存的那一列，把「是皮肤还是披风」与「皮肤的模型」合成一个值；
 // `category` 是由它推出的粗分类（皮肤 / 披风），列表筛选与页面顶部的分类选择器用它。
@@ -68,7 +68,7 @@ func KindsOf(category string) []string {
 	return []string{"skin.steve", "skin.alex"}
 }
 
-// NormalizeKind 只接受 DESIGN.md 4.2 里那几个枚举值。
+// NormalizeKind 只接受那几个枚举值。
 func NormalizeKind(value string) (string, error) {
 	cleaned := strings.ToLower(strings.TrimSpace(value))
 	if slices.Contains(Kinds, cleaned) {
@@ -77,7 +77,7 @@ func NormalizeKind(value string) (string, error) {
 	return "", invalid("valid.kind", strings.Join(Kinds, " / "))
 }
 
-// DESIGN.md 5.2：只接受默认尺寸的贴图 —— 皮肤 64×64、披风 64×32（宽 64、高 32）。
+// 只接受默认尺寸的贴图 —— 皮肤 64×64、披风 64×32（宽 64、高 32）。
 // 只支持默认尺寸（不收 HD 贴图）顺带也就堵掉了「IHDR 里声明一个巨大尺寸」这类
 // PNG 炸弹 —— 规范专门警告过「不先检查图像大小即可导致拒绝服务攻击」。
 const (
@@ -100,7 +100,7 @@ var (
 	pngMagic = []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
 )
 
-// ValidationError 输入不合法（贴图不是可用的 MC 贴图 / 账号字段不符合 DESIGN.md 的约束）。
+// ValidationError 输入不合法（贴图不是可用的 MC 贴图 / 账号字段不符合约束）。
 //
 // 只带**文案键 + 参数**，不带成品文案：渲染成哪种语言是 HTTP 层的事（见 i18n 包）。
 type ValidationError struct {
@@ -118,7 +118,7 @@ type ConflictError struct {
 
 func (e *ConflictError) Error() string { return keyText(e.Key, e.Args) }
 
-// keyText 是这两个错误的 Error()：它只进 slog（DESIGN.md 1.3 要求日志一律英文），
+// keyText 是这两个错误的 Error()：它只进 slog，
 // 所以给的是文案键与参数而不是渲染后的文案 —— 译文由 HTTP 层按 Accept-Language 出。
 func keyText(key string, args []any) string {
 	if len(args) == 0 {
@@ -152,7 +152,7 @@ func NormalizeUUID(value string) (string, error) {
 	return cleaned, nil
 }
 
-// NormalizeUsername 账号名（登录用）：DESIGN.md 4.1 规定只允许小写字母 + 数字 + @ + .。
+// NormalizeUsername 账号名（登录用）：规定只允许小写字母 + 数字 + @ + .。
 //
 // 分两步报错是为了文案能说清是哪一条不合适（太长 / 有非法字符），空格属于后者。
 func NormalizeUsername(value string) (string, error) {
@@ -169,7 +169,7 @@ func NormalizeUsername(value string) (string, error) {
 	return cleaned, nil
 }
 
-// NormalizePlayerName 游戏内角色名：DESIGN.md 规定只允许大小写字母 + 数字 + 下划线，长度 3-16。
+// NormalizePlayerName 游戏内角色名：规定只允许大小写字母 + 数字 + 下划线，长度 3-16。
 //
 // 大小写**原样保留**（正版也是这样：显示按输入来，唯一性大小写不敏感 —— 后者在 db 层做，
 // 见 Store.uniqueConflictLocked），所以这里只 trim，不再 ToLower。
@@ -189,7 +189,7 @@ func NormalizeRole(value string) (string, error) {
 	return "", invalid("valid.role", strings.Join(Roles, " / "))
 }
 
-// NormalizePassword 密码：DESIGN.md 4.1 规定只允许大小写字母 + 数字 + 下划线，长度 8-64。
+// NormalizePassword 密码：规定只允许大小写字母 + 数字 + 下划线，长度 8-64。
 //
 // 不做 trim：空白字符本来就不在字符集里，多一个 trim 只会让「贴进来的前后空格」变成
 // 静默改动。分两步报错是为了文案能说清是哪一条不合适。
@@ -328,7 +328,7 @@ func HeaderSize(header []byte) (int, int) {
 	return int(binary.BigEndian.Uint32(header[16:20])), int(binary.BigEndian.Uint32(header[20:24]))
 }
 
-// DESIGN.md「资源信任边界」：上传只校验 PNG 头、尺寸与「能不能真的解码」，不做内容审核。
+// 「资源信任边界」：上传只校验 PNG 头、尺寸与「能不能真的解码」，不做内容审核。
 // 尺寸收得很紧：皮肤必须正好 64×64，披风必须正好 64×32，HD 贴图一律拒绝。
 func ValidateTexture(kind string, data []byte) (int, int, error) {
 	_, width, height, err := decodeTexture(kind, data)
@@ -337,7 +337,7 @@ func ValidateTexture(kind string, data []byte) (int, int, error) {
 
 // NormalizeTexture 校验后**解码再重新编码**，返回可以入库的字节与尺寸。
 //
-// DESIGN.md 4.2：入库的字节是重新编码过的，asset_id 取这串字节的 sha256 —— 所以它不再是
+// 入库的字节是重新编码过的，asset_id 取这串字节的 sha256 —— 所以它不再是
 // 「上传文件本身的 sha256」。这么做的理由是规范要求的那句「除去其中任何与位图无关的数据」：
 // Go 的 PNG 编码器不写任何辅助 chunk（gAMA / tIME / tEXt … 全没了），像素一个不动，而且
 // 是个不动点（同一张图解码重编两轮字节相同），所以 asset_id 稳定、可去重。

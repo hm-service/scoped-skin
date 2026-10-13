@@ -4,7 +4,7 @@
  * 只放跨模块共用的类型；模块自己内部的形状（比如上传表单的草稿）写在模块里。
  */
 
-/** 身份组：DESIGN.md 5.1 的权限矩阵。 */
+/** 身份组：权限矩阵。 */
 export type Role = "guest" | "normal" | "admin";
 
 /** 库里那一列 kind（模型已并进皮肤这一档）。 */
@@ -31,7 +31,7 @@ export interface Player {
   cape: string;
 }
 
-/** 一条贴图资源（DESIGN.md 3.6）。 */
+/** 一条贴图资源。 */
 export interface Item {
   id: string;
   kind: Kind;

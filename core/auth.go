@@ -12,7 +12,7 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-// DESIGN.md 4.1：password_hash 使用 Argon2id 算法进行哈希，默认取
+// password_hash 使用 Argon2id 算法进行哈希，默认取
 // m=19456 (19 MiB), t=2, p=1。
 const (
 	argonMemory  uint32 = 19456
@@ -22,7 +22,7 @@ const (
 	argonSaltLen        = 16
 )
 
-// DESIGN.md 5.3「防爆破与加固措施」：无论账号存在与否，账号验证恒定等待至少 1 秒才完成。
+// 「防爆破与加固措施」：无论账号存在与否，账号验证恒定等待至少 1 秒才完成。
 const LoginMinSeconds = time.Second
 
 // PHC 字符串里的 base64 不带填充（与 argon2-cffi 一致）。

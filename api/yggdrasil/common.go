@@ -2,7 +2,7 @@
 //
 //	https://yushijinhun.github.io/authlib-injector/zh/Yggdrasil-服务端技术规范.html
 //
-// 端点挂在 /api/yggdrasil（DESIGN.md 3.5），accessToken / clientToken 都是 32 位
+// 端点挂在 /api/yggdrasil，accessToken / clientToken 都是 32 位
 // 无横线 hex、只活在内存里（30 天过期，进程重启即失效）；贴图属性用 RSA-SHA1 签名。
 package yggdrasil
 

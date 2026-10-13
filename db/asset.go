@@ -18,7 +18,7 @@ import (
 // builtinEpoch 是内置资源的固定「上传时间」基准，保证排序稳定。
 const builtinEpoch = 1_700_000_000
 
-// itemColumns 是 DESIGN.md 3.6「贴图条目」的字段来源；head 只取 BLOB 前 24 字节，
+// itemColumns 是「贴图条目」的字段来源；head 只取 BLOB 前 24 字节，
 // 列表查询不必把整张图读进内存。
 const itemColumns = "a.asset_id, a.kind, a.tags, a.upload_at, a.readonly," +
 	" length(a.data) AS size, substr(a.data, 1, 24) AS head, (f.id IS NOT NULL) AS favorite"
@@ -459,7 +459,7 @@ func scanItem(row scanner) (*Item, error) {
 		Height:     height,
 		Size:       size,
 		Favorite:   favorite,
-		TextureURL: "/asset/" + assetID,
+		TextureURL: "/api/assets/" + assetID,
 	}, nil
 }
 

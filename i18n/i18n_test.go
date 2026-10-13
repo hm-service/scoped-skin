@@ -23,9 +23,11 @@ func TestParsePicksFirstSupportedLanguage(t *testing.T) {
 		"*":                       i18n.ZhHans,
 	}
 	for header, want := range cases {
-		if got := i18n.Parse(header); got != want {
-			t.Errorf("Parse(%q) = %q，想要 %q", header, got, want)
-		}
+		t.Run(header, func(t *testing.T) {
+			if got := i18n.Parse(header); got != want {
+				t.Errorf("Parse(%q) = %q，想要 %q", header, got, want)
+			}
+		})
 	}
 
 	if i18n.Normalize("EN") != i18n.En || i18n.Normalize("zh_TW") != i18n.ZhHans || i18n.Normalize("nope") != i18n.ZhHans {
@@ -45,15 +47,19 @@ func TestCatalogHasEveryLanguage(t *testing.T) {
 		t.Fatalf("文案表只有 %d 条，像是漏了", len(keys))
 	}
 	for _, lang := range i18n.Supported() {
-		for _, key := range keys {
-			text := i18n.T(lang, key)
-			if text == "" || text == key {
-				t.Errorf("[%s] %s 没有文案", lang, key)
+		t.Run(string(lang), func(t *testing.T) {
+			for _, key := range keys {
+				t.Run(key, func(t *testing.T) {
+					text := i18n.T(lang, key)
+					if text == "" || text == key {
+						t.Errorf("[%s] %s 没有文案", lang, key)
+					}
+					if strings.ContainsAny(text, "\n\t") {
+						t.Errorf("[%s] %s 里有换行/制表符", lang, key)
+					}
+				})
 			}
-			if strings.ContainsAny(text, "\n\t") {
-				t.Errorf("[%s] %s 里有换行/制表符", lang, key)
-			}
-		}
+		})
 	}
 }
 

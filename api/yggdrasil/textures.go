@@ -78,7 +78,7 @@ func (s *Server) texturesProperty(r *http.Request, user *db.User, signed bool) (
 			return property{}, err
 		}
 		if item != nil && item.Category == "skin" {
-			entry := texture{URL: assetURL(r, item.ID)}
+			entry := texture{URL: s.assetURL(r, item.ID)}
 			if model, ok := modelMetadata[item.Kind]; ok {
 				entry.Metadata = &textureMetadata{Model: model}
 			}
@@ -91,7 +91,7 @@ func (s *Server) texturesProperty(r *http.Request, user *db.User, signed bool) (
 			return property{}, err
 		}
 		if item != nil && item.Category == "cape" {
-			payload.Textures["CAPE"] = texture{URL: assetURL(r, item.ID)}
+			payload.Textures["CAPE"] = texture{URL: s.assetURL(r, item.ID)}
 		}
 	}
 

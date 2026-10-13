@@ -58,7 +58,7 @@ export function toLogin(): void {
 
 export function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
   const token = getToken();
-  // Accept-Language 就是当前界面语言：后端按它挑错误文案（DESIGN.md 2.4）
+  // Accept-Language 就是当前界面语言：后端按它挑错误文案
   const headers: Record<string, string> = { ...extra, "Accept-Language": getLocale() };
   return token ? { ...headers, Authorization: `Bearer ${token}` } : headers;
 }

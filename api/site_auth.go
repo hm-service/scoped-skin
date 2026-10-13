@@ -10,7 +10,7 @@ import (
 	"scoped-skin/httpx"
 )
 
-// userView 是站点 API 回给前端的账号信息（DESIGN.md 3.6）：uuid / role /
+// userView 是站点 API 回给前端的账号信息：uuid / role /
 // player_name / username / skin / cape —— 绝不带 password_hash。
 type userView struct {
 	UUID       string `json:"uuid"`
@@ -42,7 +42,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 	return true
 }
 
-// currentUser 把 `Authorization: Bearer <token>` 换成库里的 user 行（DESIGN.md 3.6）。
+// currentUser 把 `Authorization: Bearer <token>` 换成库里的 user 行。
 //
 // 头缺失 / 不是 Bearer / 没有 token → 401「未登录」；token 不认识，或认识的
 // token 对应的账号已经不在库里 → 401「登录状态无效，请重新登录」。
@@ -60,7 +60,7 @@ func (s *Server) currentUser(w http.ResponseWriter, r *http.Request) *db.User {
 	return user
 }
 
-// currentAdmin 是身份组闸门：DESIGN.md 5.1 里管理用户 / 删除资源只有 role = admin 能做。
+// currentAdmin 是身份组闸门：里管理用户 / 删除资源只有 role = admin 能做。
 func (s *Server) currentAdmin(w http.ResponseWriter, r *http.Request) *db.User {
 	user := s.currentUser(w, r)
 	if user == nil {
@@ -73,7 +73,7 @@ func (s *Server) currentAdmin(w http.ResponseWriter, r *http.Request) *db.User {
 	return user
 }
 
-// currentWriter 是写闸门：DESIGN.md 5.1 里 guest 是只读身份组 —— 上传、收藏、换装这些
+// currentWriter 是写闸门：里 guest 是只读身份组 —— 上传、收藏、换装这些
 // 会改持久化资源的操作都要求 admin / normal。
 func (s *Server) currentWriter(w http.ResponseWriter, r *http.Request) *db.User {
 	user := s.currentUser(w, r)
@@ -89,7 +89,7 @@ func (s *Server) currentWriter(w http.ResponseWriter, r *http.Request) *db.User 
 
 // handleLogin 校验账号密码，按固定算法算出 token 返回（与启动时同一套规则）。
 //
-// 不做限流：按 IP 的限流交给反向代理（DESIGN.md 5.3），应用侧只保证 Argon2id 的
+// 不做限流：按 IP 的限流交给反向代理，应用侧只保证 Argon2id 的
 // 并发上限与恒定耗时。每次尝试都写一条审计记录，成功时额外记下 uuid。
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
@@ -107,7 +107,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			"username": payload.Username,
 			"result":   "denied",
 		})
-		fail(w, r, http.StatusUnauthorized, "auth.login.failed")
+		unauthorized(w, r, "auth.login.failed")
 		return
 	}
 

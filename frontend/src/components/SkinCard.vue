@@ -53,7 +53,7 @@ watch(() => props.item.kind, draw);
 </script>
 
 <template>
-  <!-- data-id 是给 CDP 验证脚本（tools/shot.mjs 的 --eval）按卡片选元素的稳定钩子，别删 -->
+  <!-- data-id 是给 CDP 验证脚本（shot.mjs 的 --eval）按卡片选元素的稳定钩子，别删 -->
   <article class="card"
            :class="{ cape: item.category === 'cape', on: active, builtin: item.readonly }"
            role="listitem" :data-id="item.id" @click="emit('select', item)"

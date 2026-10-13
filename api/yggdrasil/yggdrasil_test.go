@@ -7,6 +7,7 @@
 package yggdrasil_test
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/rsa"
 	"crypto/sha1"
@@ -15,6 +16,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -146,6 +149,28 @@ func (h *harness) wantsError(recorder *httptest.ResponseRecorder, status int, ki
 	}
 }
 
+// captureLogs 把默认 slog 输出接到内存里，返回读日志的函数（每条一行 JSON）。
+// slog 是进程级全局状态，用到它的用例不能并行。
+func captureLogs(t *testing.T) func() []map[string]any {
+	t.Helper()
+
+	var buffer bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buffer, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	return func() []map[string]any {
+		records := []map[string]any{}
+		for line := range strings.SplitSeq(strings.TrimSpace(buffer.String()), "\n") {
+			var record map[string]any
+			if err := json.Unmarshal([]byte(line), &record); err == nil {
+				records = append(records, record)
+			}
+		}
+		return records
+	}
+}
+
 type texturePayload struct {
 	Timestamp   int64  `json:"timestamp"`
 	ProfileID   string `json:"profileId"`
@@ -212,13 +237,15 @@ func TestMetadataRoot(t *testing.T) {
 	h := newHarness(t)
 
 	for _, path := range []string{"/api/yggdrasil", "/api/yggdrasil/"} {
-		recorder := h.do(http.MethodGet, path, nil, "")
-		if recorder.Code != http.StatusOK {
-			t.Fatalf("GET %s = %d", path, recorder.Code)
-		}
-		if contentType := recorder.Header().Get("Content-Type"); contentType != "application/json; charset=utf-8" {
-			t.Fatalf("GET %s Content-Type = %q", path, contentType)
-		}
+		t.Run(path, func(t *testing.T) {
+			recorder := h.do(http.MethodGet, path, nil, "")
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("GET %s = %d", path, recorder.Code)
+			}
+			if contentType := recorder.Header().Get("Content-Type"); contentType != "application/json; charset=utf-8" {
+				t.Fatalf("GET %s Content-Type = %q", path, contentType)
+			}
+		})
 	}
 
 	body := metaOf(t, h)
@@ -259,9 +286,11 @@ func TestMetadataRoot(t *testing.T) {
 		seen[domain.(string)] = true
 	}
 	for _, wanted := range []string{"example.com", "127.0.0.1", "localhost"} {
-		if !seen[wanted] {
-			t.Fatalf("skinDomains 缺少 %q: %v", wanted, domains)
-		}
+		t.Run(wanted, func(t *testing.T) {
+			if !seen[wanted] {
+				t.Fatalf("skinDomains 缺少 %q: %v", wanted, domains)
+			}
+		})
 	}
 }
 
@@ -328,7 +357,7 @@ func TestAuthenticateRejectsBadCredentials(t *testing.T) {
 			}, "")
 			h.wantsError(recorder, http.StatusForbidden,
 				"ForbiddenOperationException", "Invalid credentials. Invalid username or password.")
-			// DESIGN.md 5.3：账号存不存在都要花掉至少 1 秒
+			// 账号存不存在都要花掉至少 1 秒
 			if elapsed := time.Since(start); elapsed < core.LoginMinSeconds {
 				t.Fatalf("校验只花了 %v，应当恒定 ≥ %v", elapsed, core.LoginMinSeconds)
 			}
@@ -344,7 +373,7 @@ func TestAuthenticateRejectsMalformedBody(t *testing.T) {
 	h.wantsError(recorder, http.StatusBadRequest, "Bad Request", "")
 }
 
-// DESIGN.md 3.5：防爆破不靠限流，靠恒定请求时间 —— 连打多次错的也不会被拦，
+// 防爆破不靠限流，靠恒定请求时间 —— 连打多次错的也不会被拦，
 // 但每次都至少花 1 秒；账号存不存在都一样。
 func TestAuthenticateHasNoThrottleButConstantTime(t *testing.T) {
 	t.Parallel()
@@ -425,6 +454,17 @@ func TestRefreshFailuresKeepOldToken(t *testing.T) {
 		"accessToken": first.AccessToken, "clientToken": "别的客户端",
 	}, ""), http.StatusForbidden, "ForbiddenOperationException", "Invalid token.")
 
+	// 同长度、只差最后一位的近似 clientToken 也必须被拒（比较走定长摘要）
+	lookalike := first.ClientToken[:len(first.ClientToken)-1]
+	if first.ClientToken[len(first.ClientToken)-1] == '0' {
+		lookalike += "1"
+	} else {
+		lookalike += "0"
+	}
+	h.wantsError(h.do(http.MethodPost, "/api/yggdrasil/authserver/refresh", map[string]any{
+		"accessToken": first.AccessToken, "clientToken": lookalike,
+	}, ""), http.StatusForbidden, "ForbiddenOperationException", "Invalid token.")
+
 	// 令牌根本不存在
 	h.wantsError(h.do(http.MethodPost, "/api/yggdrasil/authserver/refresh", map[string]any{
 		"accessToken": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
@@ -471,15 +511,17 @@ func TestValidateAndInvalidate(t *testing.T) {
 		http.StatusForbidden, "ForbiddenOperationException", "Invalid token.")
 
 	// 规范：无论操作是否成功，吊销都回 204
-	for _, token := range []string{session.AccessToken, "deadbeef"} {
-		recorder := h.do(http.MethodPost, "/api/yggdrasil/authserver/invalidate",
-			map[string]any{"accessToken": token}, "")
-		if recorder.Code != http.StatusNoContent {
-			t.Fatalf("吊销 %q = %d", token, recorder.Code)
-		}
-		if body := recorder.Body.String(); body != "" {
-			t.Fatalf("204 不该带响应体: %q", body)
-		}
+	for index, token := range []string{session.AccessToken, "deadbeef"} {
+		t.Run(fmt.Sprintf("%d_%s", index, token), func(t *testing.T) {
+			recorder := h.do(http.MethodPost, "/api/yggdrasil/authserver/invalidate",
+				map[string]any{"accessToken": token}, "")
+			if recorder.Code != http.StatusNoContent {
+				t.Fatalf("吊销 %q = %d", token, recorder.Code)
+			}
+			if body := recorder.Body.String(); body != "" {
+				t.Fatalf("204 不该带响应体: %q", body)
+			}
+		})
 	}
 	h.wantsError(h.do(http.MethodPost, "/api/yggdrasil/authserver/validate",
 		map[string]any{"accessToken": session.AccessToken}, ""),
@@ -505,10 +547,59 @@ func TestSignoutRevokesEveryToken(t *testing.T) {
 		t.Fatalf("登出 = %d %s", recorder.Code, recorder.Body.String())
 	}
 	for name, token := range map[string]string{"第一个": first.AccessToken, "第二个": second.AccessToken} {
-		h.wantsError(h.do(http.MethodPost, "/api/yggdrasil/authserver/validate",
-			map[string]any{"accessToken": token}, ""),
-			http.StatusForbidden, "ForbiddenOperationException", "Invalid token.")
-		_ = name
+		t.Run(name, func(t *testing.T) {
+			h.wantsError(h.do(http.MethodPost, "/api/yggdrasil/authserver/validate",
+				map[string]any{"accessToken": token}, ""),
+				http.StatusForbidden, "ForbiddenOperationException", "Invalid token.")
+		})
+	}
+}
+
+// authenticate 与 signout 跟站点登录是同一道密码闸门，成功与失败都要留审计。
+func TestAuthenticateAndSignoutAreAudited(t *testing.T) {
+	h := newHarness(t)
+	read := captureLogs(t)
+
+	steve := h.app.Store.UserByUsername("steve")
+	const peer = "203.0.113.9:5555" // 不在默认可信网段，client_ip 就是它
+	failed := map[string]any{"username": "steve", "password": "错的"}
+
+	if recorder := h.do(http.MethodPost, "/api/yggdrasil/authserver/authenticate",
+		map[string]any{"username": "steve", "password": "steve123"}, peer); recorder.Code != http.StatusOK {
+		t.Fatalf("认证状态码 = %d（%s）", recorder.Code, recorder.Body.String())
+	}
+	h.wantsError(h.do(http.MethodPost, "/api/yggdrasil/authserver/authenticate", failed, peer),
+		http.StatusForbidden, "ForbiddenOperationException",
+		"Invalid credentials. Invalid username or password.")
+
+	if recorder := h.do(http.MethodPost, "/api/yggdrasil/authserver/signout",
+		map[string]any{"username": "steve", "password": "steve123"}, peer); recorder.Code != http.StatusNoContent {
+		t.Fatalf("登出状态码 = %d（%s）", recorder.Code, recorder.Body.String())
+	}
+	h.wantsError(h.do(http.MethodPost, "/api/yggdrasil/authserver/signout", failed, peer),
+		http.StatusForbidden, "ForbiddenOperationException",
+		"Invalid credentials. Invalid username or password.")
+
+	records := []map[string]any{}
+	for _, record := range read() {
+		if record["event"] == "login" {
+			records = append(records, record)
+		}
+	}
+	wantResults := []string{"ok", "denied", "ok", "denied"}
+	if len(records) != len(wantResults) {
+		t.Fatalf("login 审计应当有 %d 条，实际 %d: %v", len(wantResults), len(records), records)
+	}
+	for index, record := range records {
+		if record["client_ip"] != "203.0.113.9" || record["username"] != "steve" {
+			t.Errorf("第 %d 条审计的 client_ip / username 不对: %v", index, record)
+		}
+		if record["result"] != wantResults[index] {
+			t.Errorf("第 %d 条审计的 result = %v，想要 %v", index, record["result"], wantResults[index])
+		}
+		if wantResults[index] == "ok" && record["uuid"] != steve.UUID {
+			t.Errorf("第 %d 条成功审计应当带 uuid: %v", index, record)
+		}
 	}
 }
 
@@ -565,10 +656,12 @@ func TestJoinAndHasJoined(t *testing.T) {
 		t.Fatalf("第二次进服登记 = %d", recorder.Code)
 	}
 	for _, query := range []string{"?username=steve&serverId=s3", "?username=nobody&serverId=s2"} {
-		if recorder := h.do(http.MethodGet,
-			"/api/yggdrasil/sessionserver/session/minecraft/hasJoined"+query, nil, ""); recorder.Code != http.StatusNoContent {
-			t.Fatalf("hasJoined%s 应当 204，实际 %d", query, recorder.Code)
-		}
+		t.Run(query, func(t *testing.T) {
+			if recorder := h.do(http.MethodGet,
+				"/api/yggdrasil/sessionserver/session/minecraft/hasJoined"+query, nil, ""); recorder.Code != http.StatusNoContent {
+				t.Fatalf("hasJoined%s 应当 204，实际 %d", query, recorder.Code)
+			}
+		})
 	}
 	h.wantsError(h.do(http.MethodGet,
 		"/api/yggdrasil/sessionserver/session/minecraft/hasJoined?username=steve", nil, ""),
@@ -603,7 +696,7 @@ func TestHasJoinedChecksClientIP(t *testing.T) {
 	}
 }
 
-// DESIGN.md 5.5：站在可信反代后面时，join 记下的是反代头里的真实客户端 IP，
+// 站在可信反代后面时，join 记下的是反代头里的真实客户端 IP，
 // hasJoined 的 ip 比对才有意义（不然所有玩家都会被记成反代自己）。
 func TestHasJoinedUsesRealClientIPBehindTrustedProxy(t *testing.T) {
 	t.Parallel()
@@ -694,9 +787,11 @@ func TestProfile(t *testing.T) {
 	// 查询路径要宽容：带横线、大写的 UUID 都认（写入路径才严格只收小写）
 	dashed := playerUUID[0:8] + "-" + playerUUID[8:12] + "-" + playerUUID[12:16] + "-" + playerUUID[16:20] + "-" + playerUUID[20:32]
 	for _, form := range []string{dashed, strings.ToUpper(dashed)} {
-		if recorder := h.do(http.MethodGet, "/api/yggdrasil/sessionserver/session/minecraft/profile/"+form, nil, ""); recorder.Code != http.StatusOK {
-			t.Errorf("profile 查 %q 应当也认，实际 %d", form, recorder.Code)
-		}
+		t.Run(form, func(t *testing.T) {
+			if recorder := h.do(http.MethodGet, "/api/yggdrasil/sessionserver/session/minecraft/profile/"+form, nil, ""); recorder.Code != http.StatusOK {
+				t.Errorf("profile 查 %q 应当也认，实际 %d", form, recorder.Code)
+			}
+		})
 	}
 	// 查无此人 → 204
 	if recorder := h.do(http.MethodGet, "/api/yggdrasil/sessionserver/session/minecraft/profile/00000000000000000000000000000000", nil, ""); recorder.Code != http.StatusNoContent {
@@ -704,7 +799,7 @@ func TestProfile(t *testing.T) {
 	}
 }
 
-// 装备皮肤后，textures 里要出现指向 /asset/{sha256} 的 SKIN，模型按库里的 kind 映射。
+// 装备皮肤后，textures 里要出现指向 /api/assets/{sha256} 的 SKIN，模型按库里的 kind 映射。
 func TestProfileCarriesEquippedSkin(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
@@ -730,7 +825,7 @@ func TestProfileCarriesEquippedSkin(t *testing.T) {
 	if !ok {
 		t.Fatalf("装备后应当有 SKIN: %+v", payload.Textures)
 	}
-	wantURL := "http://example.com/asset/" + wideID
+	wantURL := "http://example.com/api/assets/" + wideID
 	if skin.URL != wantURL {
 		t.Fatalf("SKIN.url = %q，想要 %q", skin.URL, wantURL)
 	}

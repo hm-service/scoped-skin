@@ -71,9 +71,10 @@ export function otherLanguage() {
   return LANGUAGES.find((language) => language.id !== current) ?? LANGUAGES[0];
 }
 
-/** 取文案：键由类型系统保证存在，变量按 {name} 逐个替换。 */
+/** 取文案：变量按 {name} 逐个替换；运行时查不到就原样回键，坏键不会被静默吞掉。 */
 export function t(key: MessageKey, vars?: MessageVars): string {
   const item = catalog[key];
+  if (!item) return key;
   let out = getLocale() === "en" ? item.en : item.zh;
   if (vars) {
     for (const [name, value] of Object.entries(vars)) {

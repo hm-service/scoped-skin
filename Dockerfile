@@ -1,11 +1,10 @@
 # ==========================================
 # 第一阶段：构建前端
 # ==========================================
-FROM --platform=$BUILDPLATFORM node:26-alpine AS frontend
+FROM --platform=$BUILDPLATFORM node:26.7.0-alpine AS frontend
 
-# pnpm 版本与 .github/workflows 里的一致，取本机正式版
-ARG PNPM_VERSION=12.11.2
-RUN npm install -g pnpm@${PNPM_VERSION}
+# 版本在模板生成时注入
+RUN npm install -g pnpm@12.13.0
 
 WORKDIR /build/frontend
 
@@ -18,7 +17,7 @@ RUN pnpm build
 # ==========================================
 # 第二阶段：构建 Go 二进制
 # ==========================================
-FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -39,6 +38,7 @@ COPY . .
 COPY --from=frontend /build/frontend/dist ./frontend/dist
 
 # -ldflags="-w -s"：移除调试信息与符号表，明显减小二进制
+# -trimpath 从编译后的可执行文件中移除所有本地文件系统路径，以生成可复现的构建结果
 RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -trimpath -o app.bin .
 
 # ==========================================
@@ -46,7 +46,7 @@ RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -trimpath -o
 # ==========================================
 FROM alpine:3
 
-# podman 把 kube 的 httpGet 存活探针翻译成 `curl -f <url> || exit 1` 在容器里执行，
+# Podman 会把 kube 的 httpGet 存活探针翻译成 `curl -f <url> || exit 1` 在容器里执行，
 # 镜像里没有 curl 探针就恒失败，容器会被反复判 unhealthy 后重启。
 RUN apk --no-cache add ca-certificates curl tzdata
 

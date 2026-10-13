@@ -5,7 +5,7 @@ import (
 	"log/slog"
 )
 
-// Audit 是 DESIGN.md 5.4 要求的审计日志：一条事件一行结构化日志，带 client_ip 与
+// Audit 是审计日志：一条事件一行结构化日志，带 client_ip 与
 // 时间戳（slog 的 JSON handler 会带上，时区取进程的 TZ）。
 type Audit struct{}
 

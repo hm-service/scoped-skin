@@ -112,7 +112,7 @@ function sameTags(a: readonly string[], b: readonly string[]): boolean {
   return norm(a) === norm(b);
 }
 
-/** 标签上限，与 core.MaxTagsPerAsset / core.MaxTagLength 保持一致（DESIGN.md 4.2）。 */
+/** 标签上限，与 core.MaxTagsPerAsset / core.MaxTagLength 保持一致。 */
 const MAX_TAGS = 8;
 const MAX_TAG_LENGTH = 32;
 
@@ -216,7 +216,7 @@ function createStore() {
 
   const uploading = computed(() => state.tab === "upload");
 
-  /** 身份组派生出来的界面权限（DESIGN.md 5.1，真正的闸门在后端）。 */
+  /** 身份组派生出来的界面权限。 */
   const role = computed(() => state.player?.role ?? "");
   const canUpload = computed(() => roles.canUpload(role.value));
   const canWrite = computed(() => roles.canWrite(role.value)); // 收藏 / 装备：guest 只读
@@ -606,7 +606,7 @@ function createStore() {
   function addTag(tag: string): void {
     const clean = tag.trim();
     if (!clean || hasTag(state.selectedTags, clean)) return;
-    // 与后端一致的上限（DESIGN.md 4.2）：最多 8 个、单条最长 32 字符
+    // 与后端一致的上限：最多 8 个、单条最长 32 字符
     if ([...clean].length > MAX_TAG_LENGTH) {
       toast(t("tag.too-long", { count: MAX_TAG_LENGTH }));
       return;

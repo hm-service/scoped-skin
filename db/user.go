@@ -184,7 +184,7 @@ func (s *Store) UpdateUser(playerUUID string, changes map[string]string) (*User,
 	if len(assignments) == 0 {
 		return current, nil
 	}
-	// DESIGN.md 5.1：最后一个管理员不可降级 —— guest 同样是降级（只挡 normal 会把管理员清零）。
+	// 最后一个管理员不可降级 —— guest 同样是降级（只挡 normal 会把管理员清零）。
 	if role, ok := fields["role"]; ok && role != "admin" && current.Role == "admin" && s.adminCountLocked() <= 1 {
 		return nil, &core.ValidationError{Key: "valid.last-admin"}
 	}

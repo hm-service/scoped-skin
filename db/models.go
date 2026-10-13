@@ -1,6 +1,6 @@
 package db
 
-// User 是 DESIGN.md 4.1 的 user 表。
+// User 是 user 表。
 type User struct {
 	UUID         string `json:"uuid"`
 	Role         string `json:"role"`
@@ -21,7 +21,7 @@ type AssetUser struct {
 	Slot       string `json:"slot"`
 }
 
-// Item 是一条贴图资源，字段与 DESIGN.md 3.6 的「贴图条目」一致。
+// Item 是一条贴图资源，字段与「贴图条目」一致。
 //
 // Kind 是库里那一列（skin.steve / skin.alex / cape，已含模型）；Category 是由它推出的
 // 粗分类（skin / cape），前端分类与 Yggdrasil 的 SKIN / CAPE 分支都用它。

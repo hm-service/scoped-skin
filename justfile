@@ -8,11 +8,8 @@ DIST := ".dist"
 DIST_OS := env("DIST_OS", "linux")
 ARCHS := env("ARCHS", "amd64 arm64")
 
-# 启停用的三个变量（AGENTS.md 的启停约定）：默认值与应用自身的默认值一致，
-# 所以 `just run PORT=10080` 与 `PORT=10080 just run` 等价。
-HOST := env("HOST", "127.0.0.1")
 PORT := env("PORT", "8080")
-DATA_DIR := justfile_directory() / ".data"
+DATA_DIR := env("DATA_DIR", justfile_directory() / ".data")
 
 # 列出全部命令
 default:
@@ -39,9 +36,9 @@ build: frontend
     done
     ls -l {{ DIST }}
 
-# 本机跑起来（其余环境变量如 READYZ_TOKEN / TZ 直接走环境变量）
+# 本机跑起来（HOST / PORT / READYZ_TOKEN / TZ 等直接走环境变量）
 run: frontend
-    HOST={{ HOST }} PORT={{ PORT }} DATA_DIR={{ DATA_DIR }} go run .
+    DATA_DIR={{ DATA_DIR }} go run .
 
 # 停止本机上这份服务：按监听端口定位进程 → 确认确实属于本项目 → SIGINT 等它自己退
 stop:

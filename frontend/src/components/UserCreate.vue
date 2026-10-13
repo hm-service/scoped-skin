@@ -3,7 +3,7 @@
  * 新建一个账号：游戏内名称 / 账号 / 密码 / UUID / 身份组。
  *
  * 入口在账号列表末尾那一行（点一下开这个弹层）。UUID 留空时由后端按离线规则从
- * 游戏内名称推导，建好之后可以在「编辑」里改（DESIGN.md 4.1）。
+ * 游戏内名称推导，建好之后可以在「编辑」里改。
  */
 import { t } from "@/i18n";
 import { maintainStore } from "@/maintain-store";

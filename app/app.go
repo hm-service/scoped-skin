@@ -18,13 +18,13 @@ import (
 	"scoped-skin/httpx"
 )
 
-// DESIGN.md 1.1：DATA_DIR 默认 /data。
+// DATA_DIR 默认 /data。
 const DefaultDataDir = "/data"
 
 // DefaultAdminUsername 是首次启动生成的管理员账号的默认名字（ADMIN_USERNAME 可覆盖）。
 const DefaultAdminUsername = "admin"
 
-// ArgonConcurrency 是同时进行的 Argon2id 校验数量上限（DESIGN.md 5.3）：
+// ArgonConcurrency 是同时进行的 Argon2id 校验数量上限：
 // 每次校验吃 19 MiB，不限并发就等于把内存交给对方。
 var ArgonConcurrency = 4
 
@@ -38,10 +38,10 @@ type Config struct {
 	AdminUsername string
 	AdminPassword string
 
-	// TrustedProxies 是逗号分隔的 IP / CIDR，见 DESIGN.md 5.5；留空只信本机。
+	// TrustedProxies 是逗号分隔的 IP / CIDR，见 ；留空只信本机。
 	TrustedProxies string
 
-	// ReadyzToken 非空时，/readyz 必须先带上 ?token=<它> 才应答（见 DESIGN.md 3.2）；
+	// ReadyzToken 非空时，/readyz 必须先带上 ?token=<它> 才应答；
 	// 留空则探针公开，跟以前一样。
 	ReadyzToken string
 }
@@ -112,7 +112,7 @@ func Open(cfg Config) (*App, error) {
 		proxies:  proxies,
 		argon:    make(chan struct{}, concurrency),
 	}
-	// 库与密钥都就位了，把目录与文件权限收到约定值（DESIGN.md 1.5）。
+	// 库与密钥都就位了，把目录与文件权限收到约定值。
 	// 收到收不动就直接起不来 —— /readyz 保证的东西不能靠运气。
 	if err := hardenDataDir(cfg.DataDir); err != nil {
 		instance.Close()
@@ -161,7 +161,7 @@ func ensureAdmin(store *db.Store, username, password string) error {
 	return nil
 }
 
-// Close 关闭数据库。错误交给调用方 —— 关闭失败要在退出码里体现（AGENTS.md 的启停约定）。
+// Close 关闭数据库。错误交给调用方 —— 关闭失败要在退出码里体现。
 func (a *App) Close() error {
 	if a.Store == nil {
 		return nil
@@ -169,8 +169,11 @@ func (a *App) Close() error {
 	return a.Store.Close()
 }
 
-// ClientIP 按可信代理设置取客户端 IP（DESIGN.md 5.5）。
+// ClientIP 按可信代理设置取客户端 IP。
 func (a *App) ClientIP(r *http.Request) string { return a.proxies.ClientIP(r) }
+
+// PeerTrusted 报告连接的对端是否可信：反代头只有在可信时才作数。
+func (a *App) PeerTrusted(r *http.Request) bool { return a.proxies.PeerTrusted(r) }
 
 // RefreshTokens 用户表动过之后重建 token 表，并作废相关账号的 Yggdrasil 内存会话。
 //
@@ -211,7 +214,7 @@ func (a *App) RefreshTokens(resetSessions ...string) error {
 
 // VerifyCredentials 校验账号密码，恒定至少花 LoginMinSeconds 才返回。
 //
-// DESIGN.md 5.3：账号存不存在都等这么久，抹掉「不存在的账号秒回」这个时序侧信道；
+// 账号存不存在都等这么久，抹掉「不存在的账号秒回」这个时序侧信道；
 // 同时用信号量把并发的 Argon2id 压到 ArgonConcurrency 个（等待的 goroutine 不占内存）。
 // 站点登录与 Yggdrasil 的 authenticate / signout 共用这一个入口。
 func (a *App) VerifyCredentials(username, password string) *db.User {
@@ -223,7 +226,7 @@ func (a *App) VerifyCredentials(username, password string) *db.User {
 	return user
 }
 
-// Ready 是 /readyz 的探针（DESIGN.md 3.2）：数据库可读可写、签名密钥已创建、
+// Ready 是 /readyz 的探针：数据库可读可写、签名密钥已创建、
 // DATA_DIR 与其中的文件权限已收紧，三条都满足才算就绪。
 func (a *App) Ready() error {
 	if err := a.Store.Ready(); err != nil {

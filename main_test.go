@@ -1,11 +1,17 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
-// 端口没设用默认值，设了就必须是 1-65535 的整数（AGENTS.md 的环境变量约定）。
+// 端口没设用默认值，设了就必须是 1-65535 的整数。
 func TestReadPort(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -40,6 +46,56 @@ func TestReadPort(t *testing.T) {
 			}
 			if got != item.want {
 				t.Errorf("readPort() = %d，想要 %d", got, item.want)
+			}
+		})
+	}
+}
+
+// HOST 没设用默认值，设了就必须是 IP 或合法的 RFC 1123 主机名。
+func TestReadHost(t *testing.T) {
+	longest := strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + "." + strings.Repeat("c", 63) + "." + strings.Repeat("d", 61)
+	cases := []struct {
+		name    string
+		host    string
+		want    string
+		wantErr bool
+	}{
+		{name: "没设用默认值", want: "127.0.0.1"},
+		{name: "IPv4", host: "0.0.0.0", want: "0.0.0.0"},
+		{name: "IPv6", host: "::1", want: "::1"},
+		{name: "主机名", host: "api.example.com", want: "api.example.com"},
+		{name: "单标签主机名", host: "localhost", want: "localhost"},
+		{name: "大写与连字符", host: "My-Host.example", want: "My-Host.example"},
+		{name: "63 字符标签", host: strings.Repeat("a", 63), want: strings.Repeat("a", 63)},
+		{name: "253 字符名", host: longest, want: longest},
+		{name: "254 字符名", host: longest + "a", wantErr: true},
+		{name: "64 字符标签", host: strings.Repeat("a", 64), wantErr: true},
+		{name: "带空格", host: " 127.0.0.1", wantErr: true},
+		{name: "带斜杠", host: "localhost/", wantErr: true},
+		{name: "带端口", host: "localhost:8080", wantErr: true},
+		{name: "空标签", host: "a..b", wantErr: true},
+		{name: "结尾点", host: "example.com.", wantErr: true},
+		{name: "连字符开头", host: "-host", wantErr: true},
+		{name: "连字符结尾", host: "host-", wantErr: true},
+		{name: "下划线", host: "my_host", wantErr: true},
+	}
+
+	for _, item := range cases {
+		t.Run(item.name, func(t *testing.T) {
+			t.Setenv("HOST", item.host)
+
+			got, err := readHost()
+			if item.wantErr {
+				if err == nil {
+					t.Fatalf("readHost() = %q，想要报错", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("readHost() 报错: %v", err)
+			}
+			if got != item.want {
+				t.Errorf("readHost() = %q，想要 %q", got, item.want)
 			}
 		})
 	}
@@ -108,7 +164,7 @@ func TestCheckTimezone(t *testing.T) {
 	}
 }
 
-// 两个槽位数都可以用环境变量覆盖（AGENTS.md 的环境变量约定）；没设用默认值，
+// 两个槽位数都可以用环境变量覆盖；没设用默认值，
 // 设了但写错直接失败 —— 信号量容量为 0 会让服务永久排队，宁可在启动时就报错。
 func TestReadConcurrencyLimits(t *testing.T) {
 	cases := []struct {
@@ -147,5 +203,46 @@ func TestReadConcurrencyLimits(t *testing.T) {
 				t.Errorf("readConcurrencyLimits() = %+v，想要 %+v", got, item.want)
 			}
 		})
+	}
+}
+
+// 每条日志都要带 RFC 3339 的 timestamp 字段，而不是 handler 默认的 time。
+func TestInitLoggerTimestampField(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("创建管道失败: %v", err)
+	}
+	t.Cleanup(func() { reader.Close() })
+	previousOut := os.Stdout
+	os.Stdout = writer
+	previousLogger := slog.Default()
+	t.Cleanup(func() {
+		os.Stdout = previousOut
+		slog.SetDefault(previousLogger)
+	})
+
+	initLogger()
+	slog.Info("probe")
+	if err := writer.Close(); err != nil {
+		t.Fatalf("关闭管道失败: %v", err)
+	}
+	raw, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("读取日志失败: %v", err)
+	}
+
+	var record map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(raw), &record); err != nil {
+		t.Fatalf("不是合法 JSON: %v (%s)", err, raw)
+	}
+	stamp, ok := record["timestamp"].(string)
+	if !ok {
+		t.Fatalf("缺少 timestamp 字段: %v", record)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, stamp); err != nil {
+		t.Fatalf("timestamp 不是 RFC 3339: %q", stamp)
+	}
+	if _, ok := record["time"]; ok {
+		t.Fatalf("不应再有 time 字段: %v", record)
 	}
 }

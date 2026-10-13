@@ -16,7 +16,7 @@ import (
 	"scoped-skin/httpx"
 )
 
-// DESIGN.md 5.2：分块读，块大小照 Python 版的 READ_CHUNK_BYTES 来。
+// 分块读，块大小照 Python 版的 READ_CHUNK_BYTES 来。
 const uploadChunkBytes = 64 * 1024
 
 // uploadMemoryBytes 交给 ParseMultipartForm 的内存阈值：请求体本身已被中间件的
@@ -63,7 +63,7 @@ func readUpload(w http.ResponseWriter, r *http.Request, reader io.Reader) ([]byt
 			// 读请求体时撞上中间件 MaxBytesReader 的上限（Content-Length 缺失、
 			// 靠分块传超大体的情况），错误体与中间件那道闸保持一致。
 			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-				fail(w, r, http.StatusBadRequest, "request.too-big")
+				fail(w, r, http.StatusRequestEntityTooLarge, "request.too-big")
 			} else {
 				fail(w, r, http.StatusBadRequest, "upload.missing")
 			}
@@ -138,7 +138,7 @@ type precheckRequest struct {
 	Data string `json:"data"`
 }
 
-// 尺寸已经限死在 64×64 / 64×32（DESIGN.md 5.2），把原图带上来一起验没什么负担：
+// 尺寸已经限死在 64×64 / 64×32，把原图带上来一起验没什么负担：
 // 服务端跑规范化（PNG 头 + 真解码 + 尺寸 + 重新编码）并算 asset_id，顺手把这个 ID 回给前端
 // —— 入库字节是重编码过的，前端自己算不出这个 ID。新皮肤也返回 200（带 exists: false），
 // 避免浏览器控制台里出现 404。
@@ -189,7 +189,7 @@ func sha256Hex(data []byte) string {
 }
 
 // 前端不再算 asset_id：服务端把原图规范化（解码 → 重新编码，剥掉多余的 PNG chunk）后
-// 取这串入库字节的 sha256 作为 ID。文件分块读，一超过上限就 400 —— Content-Length 那道闸
+// 取这串入库字节的 sha256 作为 ID。文件分块读，一超过贴图上限就 400 —— 请求体那道闸
 // 在中间件里。
 func (s *Server) handleUploadSkin(w http.ResponseWriter, r *http.Request) {
 	user := s.currentWriter(w, r)
@@ -199,7 +199,7 @@ func (s *Server) handleUploadSkin(w http.ResponseWriter, r *http.Request) {
 
 	if err := r.ParseMultipartForm(uploadMemoryBytes); err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			fail(w, r, http.StatusBadRequest, "request.too-big")
+			fail(w, r, http.StatusRequestEntityTooLarge, "request.too-big")
 			return
 		}
 		fail(w, r, http.StatusBadRequest, "upload.missing")
@@ -273,7 +273,7 @@ func (s *Server) handleFavorite(w http.ResponseWriter, r *http.Request) {
 	httpx.Write(w, http.StatusOK, itemWithStats{Item: *item, Stats: stats})
 }
 
-// handleAssetUsers 列出正在穿这张贴图的账号：删除前给管理员看的（DESIGN.md 3.6）。
+// handleAssetUsers 列出正在穿这张贴图的账号：删除前给管理员看的。
 //
 // 只给 admin：这份名单是「谁装备了什么」，和 /api/admin/users 一样属于管理面。
 func (s *Server) handleAssetUsers(w http.ResponseWriter, r *http.Request) {
@@ -298,7 +298,7 @@ func (s *Server) handleAssetUsers(w http.ResponseWriter, r *http.Request) {
 	}{Users: users})
 }
 
-// handleDeleteItem 删除贴图：DESIGN.md 5.1 里「删除资源」只给 admin。
+// handleDeleteItem 删除贴图：里「删除资源」只给 admin。
 //
 // 删除本身会把使用者的 skin / cape 清空（db.dropAssetLocked），这里不做拦截 ——
 // 「有谁在用」由 GET /api/items/{asset_id}/users 提前告诉前端，让管理员自己决定。

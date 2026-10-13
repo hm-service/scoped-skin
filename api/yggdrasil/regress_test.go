@@ -3,6 +3,7 @@ package yggdrasil_test
 import (
 	"bytes"
 	"crypto/tls"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -106,8 +107,10 @@ func TestAuthserverEndpointsRejectMalformedBodies(t *testing.T) {
 		"/api/yggdrasil/authserver/signout",
 		"/api/yggdrasil/api/profiles/minecraft",
 	} {
-		h.wantsError(h.do(http.MethodPost, path, "{不是 JSON", ""),
-			http.StatusBadRequest, "Bad Request", "Malformed JSON body")
+		t.Run(path, func(t *testing.T) {
+			h.wantsError(h.do(http.MethodPost, path, "{不是 JSON", ""),
+				http.StatusBadRequest, "Bad Request", "Malformed JSON body")
+		})
 	}
 }
 
@@ -152,7 +155,7 @@ func TestRefreshRequestUserAndDeletedProfile(t *testing.T) {
 	}, ""), http.StatusForbidden, "ForbiddenOperationException", "Invalid token.")
 }
 
-// 同时装了皮肤与披风时，textures 里要有 SKIN 与 CAPE 两项，且都指向 /asset/{sha256}。
+// 同时装了皮肤与披风时，textures 里要有 SKIN 与 CAPE 两项，且都指向 /api/assets/{sha256}。
 func TestProfileCarriesCape(t *testing.T) {
 	h := newHarness(t)
 
@@ -191,14 +194,14 @@ func TestProfileCarriesCape(t *testing.T) {
 	payload := decodeTextureProperty(t, entry.Properties[0].Value)
 
 	skin, ok := payload.Textures["SKIN"]
-	if !ok || skin.URL != "http://example.com/asset/"+skinID {
-		t.Errorf("SKIN = %+v，想要 http://example.com/asset/%s", skin, skinID)
+	if !ok || skin.URL != "http://example.com/api/assets/"+skinID {
+		t.Errorf("SKIN = %+v，想要 http://example.com/api/assets/%s", skin, skinID)
 	}
 	wornCape, ok := payload.Textures["CAPE"]
 	if !ok {
 		t.Fatalf("装备的披风没出现在 textures 里: %+v", payload.Textures)
 	}
-	if want := "http://example.com/asset/" + cape.ID; wornCape.URL != want {
+	if want := "http://example.com/api/assets/" + cape.ID; wornCape.URL != want {
 		t.Errorf("CAPE.url = %q，想要 %q", wornCape.URL, want)
 	}
 	// 披风没有模型元数据（只有皮肤才有 default / slim）
@@ -207,8 +210,8 @@ func TestProfileCarriesCape(t *testing.T) {
 	}
 }
 
-// 材质 URL 必须是绝对地址：认 TLS 连接与反代的 X-Forwarded-Proto（取第一段），
-// Host 用请求本身带的。
+// 材质 URL 必须是绝对地址：认 TLS 连接与可信反代给的 X-Forwarded-Proto（取第一段），
+// Host 用请求本身带的；对端不可信时不认那个头。
 func TestTextureURLSchemeAndHost(t *testing.T) {
 	h := newHarness(t)
 
@@ -223,12 +226,15 @@ func TestTextureURLSchemeAndHost(t *testing.T) {
 	}
 	playerUUID := core.OfflineUUID("steve")
 
-	profileURL := func(host string, headers map[string]string, useTLS bool) string {
+	profileURL := func(host string, headers map[string]string, useTLS bool, remoteAddr string) string {
 		request := httptest.NewRequest(http.MethodGet,
 			"/api/yggdrasil/sessionserver/session/minecraft/profile/"+playerUUID, nil)
 		request.Host = host
 		if useTLS {
 			request.TLS = &tls.ConnectionState{}
+		}
+		if remoteAddr != "" {
+			request.RemoteAddr = remoteAddr
 		}
 		for key, value := range headers {
 			request.Header.Set(key, value)
@@ -252,21 +258,26 @@ func TestTextureURLSchemeAndHost(t *testing.T) {
 	}
 
 	cases := []struct {
-		name    string
-		host    string
-		headers map[string]string
-		tls     bool
-		want    string
+		name       string
+		host       string
+		headers    map[string]string
+		tls        bool
+		remoteAddr string
+		want       string
 	}{
-		{"明文直连", "plain.example.com", nil, false, "http://plain.example.com/asset/" + skinID},
-		{"反代给 X-Forwarded-Proto", "proxy.example.com",
-			map[string]string{"X-Forwarded-Proto": "https, http"}, false,
-			"https://proxy.example.com/asset/" + skinID},
-		{"直接 TLS", "tls.example.com", nil, true, "https://tls.example.com/asset/" + skinID},
+		// httptest 的默认对端 192.0.2.1 不在默认可信网段里
+		{"明文直连", "plain.example.com", nil, false, "", "http://plain.example.com/api/assets/" + skinID},
+		{"可信反代给 X-Forwarded-Proto", "proxy.example.com",
+			map[string]string{"X-Forwarded-Proto": "https, http"}, false, "127.0.0.1:5555",
+			"https://proxy.example.com/api/assets/" + skinID},
+		{"不可信对端伪造 X-Forwarded-Proto", "forged.example.com",
+			map[string]string{"X-Forwarded-Proto": "https"}, false, "203.0.113.9:5555",
+			"http://forged.example.com/api/assets/" + skinID},
+		{"直接 TLS", "tls.example.com", nil, true, "", "https://tls.example.com/api/assets/" + skinID},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			if got := profileURL(testCase.host, testCase.headers, testCase.tls); got != testCase.want {
+			if got := profileURL(testCase.host, testCase.headers, testCase.tls, testCase.remoteAddr); got != testCase.want {
 				t.Errorf("SKIN.url = %q，想要 %q", got, testCase.want)
 			}
 		})
@@ -303,9 +314,11 @@ func TestMetadataSkinDomainsWithPortOnlyHost(t *testing.T) {
 		seen[domain] = true
 	}
 	for _, wanted := range []string{"127.0.0.1", ":8080", "localhost"} {
-		if !seen[wanted] {
-			t.Errorf("skinDomains 缺少 %q: %v", wanted, domains)
-		}
+		t.Run(wanted, func(t *testing.T) {
+			if !seen[wanted] {
+				t.Errorf("skinDomains 缺少 %q: %v", wanted, domains)
+			}
+		})
 	}
 }
 
@@ -326,11 +339,13 @@ func TestCredentialLengthCaps(t *testing.T) {
 
 	// refresh / validate：accessToken 超长 → 403 Invalid token
 	for _, endpoint := range []string{"/api/yggdrasil/authserver/refresh", "/api/yggdrasil/authserver/validate"} {
-		recorder := h.do(http.MethodPost, endpoint,
-			map[string]any{"accessToken": long, "clientToken": long}, "")
-		if recorder.Code != http.StatusForbidden {
-			t.Errorf("%s 超长 token = %d，想要 403（%s）", endpoint, recorder.Code, recorder.Body.String())
-		}
+		t.Run(endpoint, func(t *testing.T) {
+			recorder := h.do(http.MethodPost, endpoint,
+				map[string]any{"accessToken": long, "clientToken": long}, "")
+			if recorder.Code != http.StatusForbidden {
+				t.Errorf("%s 超长 token = %d，想要 403（%s）", endpoint, recorder.Code, recorder.Body.String())
+			}
+		})
 	}
 
 	// join：serverId 超长 → 403
@@ -341,12 +356,14 @@ func TestCredentialLengthCaps(t *testing.T) {
 	}
 
 	// hasJoined：超长的 username / serverId 直接当成「没有这条进服记录」→ 204
-	for _, query := range []string{"username=" + long + "&serverId=s1", "username=steve&serverId=" + long} {
-		recorder := h.do(http.MethodGet,
-			"/api/yggdrasil/sessionserver/session/minecraft/hasJoined?"+query, nil, "")
-		if recorder.Code != http.StatusNoContent {
-			t.Errorf("hasJoined %q = %d，想要 204", query, recorder.Code)
-		}
+	for index, query := range []string{"username=" + long + "&serverId=s1", "username=steve&serverId=" + long} {
+		t.Run(fmt.Sprintf("%d_hasJoined", index), func(t *testing.T) {
+			recorder := h.do(http.MethodGet,
+				"/api/yggdrasil/sessionserver/session/minecraft/hasJoined?"+query, nil, "")
+			if recorder.Code != http.StatusNoContent {
+				t.Errorf("hasJoined %q = %d，想要 204", query, recorder.Code)
+			}
+		})
 	}
 
 	// 边界内（正好 128）仍然按正常路径走：clientToken 原样回显

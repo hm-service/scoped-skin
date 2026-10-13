@@ -17,7 +17,7 @@ func request(remoteAddr string, headers map[string]string) *http.Request {
 	return r
 }
 
-// DESIGN.md 5.5：对端不在可信网段里时，反代头一律不算数。
+// 对端不在可信网段里时，反代头一律不算数。
 func TestClientIPIgnoresHeadersFromUntrustedPeer(t *testing.T) {
 	t.Parallel()
 

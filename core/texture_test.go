@@ -3,6 +3,7 @@ package core_test
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -36,7 +37,7 @@ func pngBytes(t *testing.T, width, height int) []byte {
 	return buffer.Bytes()
 }
 
-// DESIGN.md 5.2：只接受默认尺寸 —— 皮肤正好 64×64，披风正好 64×32。
+// 只接受默认尺寸 —— 皮肤正好 64×64，披风正好 64×32。
 func TestValidateTexture(t *testing.T) {
 	t.Parallel()
 
@@ -108,7 +109,7 @@ func TestHeaderSize(t *testing.T) {
 	}
 }
 
-// DESIGN.md 4.1 的字段约束。
+// 账号字段的约束。
 func TestNormalizeUserFields(t *testing.T) {
 	t.Parallel()
 
@@ -117,11 +118,13 @@ func TestNormalizeUserFields(t *testing.T) {
 		got != "b50ad385829d3141a2167e7d7539ba7f" {
 		t.Fatalf("NormalizeUUID = %q, %v", got, err)
 	}
-	for _, bad := range []string{"", "xyz", "B50AD385-829D-3141-A216-7E7D7539BA7F",
+	for index, bad := range []string{"", "xyz", "B50AD385-829D-3141-A216-7E7D7539BA7F",
 		"b50ad385829d3141a2167e7d7539ba7", "b50ad385829d3141a2167e7d7539ba7f0"} {
-		if _, err := core.NormalizeUUID(bad); err == nil {
-			t.Fatalf("UUID %q 不该通过", bad)
-		}
+		t.Run(fmt.Sprintf("%d_%s", index, bad), func(t *testing.T) {
+			if _, err := core.NormalizeUUID(bad); err == nil {
+				t.Fatalf("UUID %q 不该通过", bad)
+			}
+		})
 	}
 
 	if got, err := core.NormalizeUsername("  steve  "); err != nil || got != "steve" {
@@ -135,15 +138,19 @@ func TestNormalizeUserFields(t *testing.T) {
 	}
 	// 账号名只收小写字母 + 数字 + @ + .（邮箱形状够用）
 	// 规则是「字符集」而不是邮箱语法：@ 与 . 可以出现在任何位置，下划线不在集合里
-	for _, bad := range []string{"ste ve", "Steve", "steve!", "中文", "steve-bot", "a/b"} {
-		if _, err := core.NormalizeUsername(bad); err == nil {
-			t.Errorf("账号名 %q 不该通过", bad)
-		}
+	for index, bad := range []string{"ste ve", "Steve", "steve!", "中文", "steve-bot", "a/b"} {
+		t.Run(fmt.Sprintf("%d_%s", index, bad), func(t *testing.T) {
+			if _, err := core.NormalizeUsername(bad); err == nil {
+				t.Errorf("账号名 %q 不该通过", bad)
+			}
+		})
 	}
-	for _, good := range []string{"steve", "steve_bot", "steve.bot", "a.b@c.d", "user123@example.com", "@"} {
-		if _, err := core.NormalizeUsername(good); err != nil {
-			t.Errorf("账号名 %q 应当通过: %v", good, err)
-		}
+	for index, good := range []string{"steve", "steve_bot", "steve.bot", "a.b@c.d", "user123@example.com", "@"} {
+		t.Run(fmt.Sprintf("%d_%s", index, good), func(t *testing.T) {
+			if _, err := core.NormalizeUsername(good); err != nil {
+				t.Errorf("账号名 %q 应当通过: %v", good, err)
+			}
+		})
 	}
 
 	// 大小写原样保留（正版也是显示按输入、唯一性不敏感）
@@ -154,24 +161,30 @@ func TestNormalizeUserFields(t *testing.T) {
 		"abc":         "abc", // 下限 3
 		strings.Repeat("a", core.MaxPlayerNameLength): strings.Repeat("a", core.MaxPlayerNameLength),
 	} {
-		if got, err := core.NormalizePlayerName(input); err != nil || got != want {
-			t.Fatalf("NormalizePlayerName(%q) = %q, %v（想要 %q）", input, got, err, want)
-		}
+		t.Run(input, func(t *testing.T) {
+			if got, err := core.NormalizePlayerName(input); err != nil || got != want {
+				t.Fatalf("NormalizePlayerName(%q) = %q, %v（想要 %q）", input, got, err, want)
+			}
+		})
 	}
-	for _, bad := range []string{
+	for index, bad := range []string{
 		"", "ab", // 短于下限
 		"Steve!", "中文", "ste ve", // 字符集
 		strings.Repeat("a", core.MaxPlayerNameLength+1), // 超上限
 	} {
-		if _, err := core.NormalizePlayerName(bad); err == nil {
-			t.Fatalf("角色名 %q 不该通过", bad)
-		}
+		t.Run(fmt.Sprintf("%d_%s", index, bad), func(t *testing.T) {
+			if _, err := core.NormalizePlayerName(bad); err == nil {
+				t.Fatalf("角色名 %q 不该通过", bad)
+			}
+		})
 	}
 
 	for _, role := range []string{"admin", "normal", "guest"} {
-		if got, err := core.NormalizeRole(strings.ToUpper(role)); err != nil || got != role {
-			t.Fatalf("NormalizeRole(%s) = %q, %v", role, got, err)
-		}
+		t.Run(role, func(t *testing.T) {
+			if got, err := core.NormalizeRole(strings.ToUpper(role)); err != nil || got != role {
+				t.Fatalf("NormalizeRole(%s) = %q, %v", role, got, err)
+			}
+		})
 	}
 	if _, err := core.NormalizeRole("root"); err == nil {
 		t.Fatalf("未知身份组不该通过")
@@ -180,7 +193,7 @@ func TestNormalizeUserFields(t *testing.T) {
 	if _, err := core.NormalizePassword(""); err == nil {
 		t.Fatalf("空密码不该通过")
 	}
-	// DESIGN.md 4.1：至少 8 个字符
+	// 至少 8 个字符
 	if _, err := core.NormalizePassword(strings.Repeat("x", core.MinPasswordLength-1)); err == nil ||
 		!strings.Contains(err.Error(), "valid.password.short") {
 		t.Fatalf("短密码不该通过: %v", err)
@@ -218,7 +231,7 @@ func TestNormalizeTags(t *testing.T) {
 		}
 	}
 
-	// DESIGN.md 4.2：标签最多 16 个、单条最长 64 字符
+	// 标签最多 16 个、单条最长 64 字符
 	many := make([]string, core.MaxTagsPerAsset+1)
 	for index := range many {
 		many[index] = "标签" + strconv.Itoa(index)
@@ -247,7 +260,7 @@ func TestNormalizeTags(t *testing.T) {
 	}
 }
 
-// DESIGN.md 4.2：kind 是库里存的那一列（已含模型），只认 skin.steve / skin.alex / cape。
+// kind 是库里存的那一列（已含模型），只认 skin.steve / skin.alex / cape。
 // 旧的 model（share / steve / alex）与粗分类（skin）都不再是合法取值。
 func TestNormalizeKind(t *testing.T) {
 	t.Parallel()
@@ -261,25 +274,29 @@ func TestNormalizeKind(t *testing.T) {
 		"\tcape\n":      "cape",
 	}
 	for input, want := range valid {
-		got, err := core.NormalizeKind(input)
-		if err != nil || got != want {
-			t.Fatalf("NormalizeKind(%q) = %q, %v，想要 %q", input, got, err, want)
-		}
+		t.Run(input, func(t *testing.T) {
+			got, err := core.NormalizeKind(input)
+			if err != nil || got != want {
+				t.Fatalf("NormalizeKind(%q) = %q, %v，想要 %q", input, got, err, want)
+			}
+		})
 	}
 
 	// 非法值 / 旧结构的枚举值 / 大小写与空白之外的花样，都要回 valid.kind
-	for _, bad := range []string{
+	for index, bad := range []string{
 		"", "   ", "skin", "steve", "alex", "share", "default", "slim", "classic",
 		"skin.steve.x", "skin-steve", "skin steve", "capes", "SKIN", "乱写",
 	} {
-		got, err := core.NormalizeKind(bad)
-		if err == nil {
-			t.Fatalf("NormalizeKind(%q) 不该通过（回 %q）", bad, got)
-		}
-		var invalid *core.ValidationError
-		if !asValidation(err, &invalid) || invalid.Key != "valid.kind" {
-			t.Fatalf("NormalizeKind(%q) 的错误 = %v，想要 *core.ValidationError{valid.kind}", bad, err)
-		}
+		t.Run(fmt.Sprintf("%d_%s", index, bad), func(t *testing.T) {
+			got, err := core.NormalizeKind(bad)
+			if err == nil {
+				t.Fatalf("NormalizeKind(%q) 不该通过（回 %q）", bad, got)
+			}
+			var invalid *core.ValidationError
+			if !asValidation(err, &invalid) || invalid.Key != "valid.kind" {
+				t.Fatalf("NormalizeKind(%q) 的错误 = %v，想要 *core.ValidationError{valid.kind}", bad, err)
+			}
+		})
 	}
 }
 
@@ -288,10 +305,12 @@ func TestCategoryOfAndKindsOf(t *testing.T) {
 	t.Parallel()
 
 	for _, kind := range core.Kinds {
-		category := core.CategoryOf(kind)
-		if category != "skin" && category != "cape" {
-			t.Fatalf("CategoryOf(%q) = %q，不在 Categories 里", kind, category)
-		}
+		t.Run(kind, func(t *testing.T) {
+			category := core.CategoryOf(kind)
+			if category != "skin" && category != "cape" {
+				t.Fatalf("CategoryOf(%q) = %q，不在 Categories 里", kind, category)
+			}
+		})
 	}
 	if core.CategoryOf("skin.steve") != "skin" || core.CategoryOf("skin.alex") != "skin" ||
 		core.CategoryOf("cape") != "cape" {
@@ -332,10 +351,12 @@ func TestQueryTokensAndMatching(t *testing.T) {
 		{"浅蓝披风", "绿", -1},
 		{"abc", "abcd", -1},
 	}
-	for _, testCase := range ranks {
-		if got := core.MatchRank(testCase.tag, testCase.token); got != testCase.want {
-			t.Errorf("MatchRank(%q, %q) = %d，想要 %d", testCase.tag, testCase.token, got, testCase.want)
-		}
+	for index, testCase := range ranks {
+		t.Run(fmt.Sprintf("%d_%s_%s", index, testCase.tag, testCase.token), func(t *testing.T) {
+			if got := core.MatchRank(testCase.tag, testCase.token); got != testCase.want {
+				t.Errorf("MatchRank(%q, %q) = %d，想要 %d", testCase.tag, testCase.token, got, testCase.want)
+			}
+		})
 	}
 
 	// 标签交集：每一项查询词都要能在条目标签里找到；档位取各项里最差的那一档
@@ -425,16 +446,18 @@ func TestValidationKeysAreInCatalog(t *testing.T) {
 		},
 	}
 	for index, build := range cases {
-		err := build()
-		if err == nil {
-			t.Fatalf("第 %d 个用例应当报错", index+1)
-		}
-		var invalid *core.ValidationError
-		if !asValidation(err, &invalid) {
-			t.Fatalf("第 %d 个用例应当是 ValidationError: %T", index+1, err)
-		}
-		if !i18n.Has(invalid.Key) {
-			t.Fatalf("文案表里没有 %q（校验错误会原样把它显示给用户）", invalid.Key)
-		}
+		t.Run(fmt.Sprintf("%d", index+1), func(t *testing.T) {
+			err := build()
+			if err == nil {
+				t.Fatalf("第 %d 个用例应当报错", index+1)
+			}
+			var invalid *core.ValidationError
+			if !asValidation(err, &invalid) {
+				t.Fatalf("第 %d 个用例应当是 ValidationError: %T", index+1, err)
+			}
+			if !i18n.Has(invalid.Key) {
+				t.Fatalf("文案表里没有 %q（校验错误会原样把它显示给用户）", invalid.Key)
+			}
+		})
 	}
 }

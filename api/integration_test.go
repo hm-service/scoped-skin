@@ -16,8 +16,8 @@ import (
 	"scoped-skin/internal/testenv"
 )
 
-// DESIGN.md 3.5：管理员动过某个账号（删号 / 改 UUID / 改凭据）时，会按 uuid 把这个账号
-// 的 Yggdrasil 会话一并清掉。这里把「站点侧改凭据 → 启动器侧令牌失效」串起来验一遍。
+// 管理员动过某个账号（删号 / 改 UUID / 改凭据）时，会按 uuid 把这个账号
+// Yggdrasil 会话一并清掉。这里把「站点侧改凭据 → 启动器侧令牌失效」串起来验一遍。
 func TestAdminCredentialChangeKillsYggdrasilSession(t *testing.T) {
 	instance := testenv.New(t)
 	handler := api.NewHandler(instance)
@@ -92,7 +92,7 @@ func TestLauncherDiscoveryThenJoin(t *testing.T) {
 	instance := testenv.New(t)
 	handler := api.NewHandler(instance)
 
-	// DESIGN.md 3.1：站点首页用 ALI 头指出 Yggdrasil 服务在哪（首页由站点外壳负责发出，
+	// 站点首页用 ALI 头指出 Yggdrasil 服务在哪（首页由站点外壳负责发出，
 	// 那条在根目录 web_test.go 里测）。启动器顺着这个地址走完下面的流程。
 	location := yggdrasil.AliasPrefix
 
@@ -181,7 +181,7 @@ func TestTextureURLNameIsTheHashOfServedBytes(t *testing.T) {
 		t.Fatalf("textures 属性不是合法 JSON: %v", err)
 	}
 	url := payload.Textures["SKIN"].URL
-	if !strings.HasPrefix(url, "http://example.com/asset/") {
+	if !strings.HasPrefix(url, "http://example.com/api/assets/") {
 		t.Fatalf("材质 URL 不对: %q", url)
 	}
 

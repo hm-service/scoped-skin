@@ -53,7 +53,7 @@ func TestSessionsEvictionRevokesEveryIssuedToken(t *testing.T) {
 	}
 
 	// DeleteUser 必须把**每一个**发出去的令牌都吊销掉。被逐出却没从 byToken 删干净
-	// 的那条正是修复前漏网的那条。
+	// 那条正是修复前漏网的那条。
 	if revoked := store.DeleteUser("uuid-steve"); revoked != core.MaxTokensPerUser {
 		t.Errorf("DeleteUser 返回 %d，想要 %d", revoked, core.MaxTokensPerUser)
 	}

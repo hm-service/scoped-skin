@@ -20,9 +20,11 @@ func TestParseQualityValuesAndUnknownFallback(t *testing.T) {
 		"*":                 i18n.ZhHans,
 	}
 	for header, want := range cases {
-		if got := i18n.Parse(header); got != want {
-			t.Errorf("Parse(%q) = %q，想要 %q", header, got, want)
-		}
+		t.Run(header, func(t *testing.T) {
+			if got := i18n.Parse(header); got != want {
+				t.Errorf("Parse(%q) = %q，想要 %q", header, got, want)
+			}
+		})
 	}
 
 	for input, want := range map[string]i18n.Lang{
@@ -32,8 +34,10 @@ func TestParseQualityValuesAndUnknownFallback(t *testing.T) {
 		" en-GB ": i18n.En,
 		"不认识的输入":  i18n.ZhHans,
 	} {
-		if got := i18n.Normalize(input); got != want {
-			t.Errorf("Normalize(%q) = %q，想要 %q", input, got, want)
-		}
+		t.Run(input, func(t *testing.T) {
+			if got := i18n.Normalize(input); got != want {
+				t.Errorf("Normalize(%q) = %q，想要 %q", input, got, want)
+			}
+		})
 	}
 }

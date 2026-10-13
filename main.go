@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -22,13 +23,20 @@ import (
 // version 是根元数据里的 implementationVersion，也是启动日志里的一条。
 const version = "0.2.0"
 
-// shutdownTimeout 是优雅关闭的时限（AGENTS.md 的启停约定）：等在手请求最多等这么久，
+// shutdownTimeout 是优雅关闭的时限：等在手请求最多等这么久，
 // 超时就强制关掉，进程以 254 退出。
 const shutdownTimeout = 5 * time.Second
 
 func initLogger() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
+		// 日志约定用 timestamp 字段，覆盖 handler 默认的 time。
+		ReplaceAttr: func(_ []string, attr slog.Attr) slog.Attr {
+			if attr.Key == slog.TimeKey {
+				attr.Key = "timestamp"
+			}
+			return attr
+		},
 	})))
 }
 
@@ -38,7 +46,7 @@ type concurrencyLimits struct {
 	static int
 }
 
-// readConcurrencyLimits 读两个槽位数（AGENTS.md 的环境变量约定），没设就用默认值。
+// readConcurrencyLimits 读两个槽位数，没设就用默认值。
 func readConcurrencyLimits() (concurrencyLimits, error) {
 	apiLimit, err := readLimit("MAX_API_CONCURRENCY", api.DefaultAPIConcurrency)
 	if err != nil {
@@ -60,12 +68,12 @@ func readLimit(name string, fallback int) (int, error) {
 	}
 	value, err := strconv.Atoi(raw)
 	if err != nil || value < 1 {
-		return 0, fmt.Errorf("%s 必须是 >= 1 的整数，实际是 %q", name, raw)
+		return 0, fmt.Errorf("%s must be an integer >= 1, got %q", name, raw)
 	}
 	return value, nil
 }
 
-// readPort 读 PORT（AGENTS.md 的环境变量约定）：没设就用 8080，设了就必须是 1-65535 的整数。
+// readPort 读 PORT：没设就用 8080，设了就必须是 1-65535 的整数。
 func readPort() (int, error) {
 	raw := os.Getenv("PORT")
 	if raw == "" {
@@ -73,12 +81,46 @@ func readPort() (int, error) {
 	}
 	value, err := strconv.Atoi(raw)
 	if err != nil || value < 1 || value > 65535 {
-		return 0, fmt.Errorf("PORT 必须是 1-65535 的整数，实际是 %q", raw)
+		return 0, fmt.Errorf("PORT must be an integer between 1 and 65535, got %q", raw)
 	}
 	return value, nil
 }
 
-// readReadyzToken 读 READYZ_TOKEN（AGENTS.md 的环境变量约定）：留空表示探针不设门槛；
+// readHost 读 HOST：没设就用 127.0.0.1，设了就必须是 IP 或合法的 RFC 1123 主机名 ——
+// 带空格、斜杠的值会让 net.JoinHostPort 拼成另一个地址，宁可在启动时拦下。
+func readHost() (string, error) {
+	host := os.Getenv("HOST")
+	if host == "" {
+		return "127.0.0.1", nil
+	}
+	if net.ParseIP(host) == nil && !validHostname(host) {
+		return "", fmt.Errorf("HOST must be an IP address or a valid hostname, got %q", host)
+	}
+	return host, nil
+}
+
+// validHostname 按 RFC 1123 校验：点分标签各 1-63 字符 [A-Za-z0-9-]、不以连字符起止，总长 <= 253。
+func validHostname(host string) bool {
+	if len(host) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if len(label) == 0 || len(label) > 63 {
+			return false
+		}
+		for i, r := range label {
+			switch {
+			case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			case r == '-' && i > 0 && i < len(label)-1:
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// readReadyzToken 读 READYZ_TOKEN：留空表示探针不设门槛；
 // 设了就必须是 16-128 位、只含小写字母 / 数字 / 下划线 —— 它要拼进 URL，写错不如启动时就拦下。
 func readReadyzToken() (string, error) {
 	token := os.Getenv("READYZ_TOKEN")
@@ -86,17 +128,17 @@ func readReadyzToken() (string, error) {
 		return "", nil
 	}
 	if len(token) < 16 || len(token) > 128 {
-		return "", fmt.Errorf("READYZ_TOKEN 长度必须是 16-128，实际是 %d", len(token))
+		return "", fmt.Errorf("READYZ_TOKEN must be 16-128 characters long, got %d", len(token))
 	}
 	for _, r := range token {
 		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
-			return "", fmt.Errorf("READYZ_TOKEN 只允许小写字母、数字与下划线，实际含 %q", r)
+			return "", fmt.Errorf("READYZ_TOKEN may only contain lowercase letters, digits and underscores, got %q", r)
 		}
 	}
 	return token, nil
 }
 
-// checkTimezone 读 TZ（AGENTS.md 的环境变量约定）：设了就必须是 Go 认得的地名。
+// checkTimezone 读 TZ：设了就必须是 Go 认得的地名。
 // 名字写错时 Go 会静默退回 UTC，日志时间戳跟着错 —— 宁可在启动时报出来。
 func checkTimezone() error {
 	name := os.Getenv("TZ")
@@ -104,7 +146,7 @@ func checkTimezone() error {
 		return nil
 	}
 	if _, err := time.LoadLocation(name); err != nil {
-		return fmt.Errorf("TZ 不是有效的时区名 %q: %w", name, err)
+		return fmt.Errorf("TZ is not a valid time zone name %q: %w", name, err)
 	}
 	return nil
 }
@@ -120,7 +162,7 @@ func newRootHandler(instance *app.App, files fs.FS, limits concurrencyLimits) ht
 	root := http.NewServeMux()
 	// api 包认领的前缀：新增的接口如果不落在这些前缀下，得在这里补一条，
 	// 否则请求会落到站点外壳上变成 404。
-	for _, prefix := range []string{"/api/", "/asset/", "/livez", "/readyz"} {
+	for _, prefix := range []string{"/api/", "/livez", "/readyz"} {
 		root.Handle(prefix, apiHandler)
 	}
 	root.Handle("/", siteShell)
@@ -136,6 +178,11 @@ func main() {
 		os.Exit(1)
 	}
 	port, err := readPort()
+	if err != nil {
+		slog.Error("init failed", slog.Any("error", err))
+		os.Exit(1)
+	}
+	host, err := readHost()
 	if err != nil {
 		slog.Error("init failed", slog.Any("error", err))
 		os.Exit(1)
@@ -164,12 +211,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 路由与监听（DESIGN.md 1.1：HOST / PORT）。自己 Listen 而不是 ListenAndServe，
+	// 路由与监听。自己 Listen 而不是 ListenAndServe，
 	// 是为了先拿到内核给的地址再打启动日志，端口写 0 时也只有这里看得到实际端口。
-	host := os.Getenv("HOST")
-	if host == "" {
-		host = "127.0.0.1"
-	}
 	listener, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
 	if err != nil {
 		slog.Error("init failed", slog.Any("error", err))
@@ -189,7 +232,7 @@ func main() {
 	os.Exit(serve(server, listener, instance))
 }
 
-// serve 跑起服务并处理停止信号（AGENTS.md 的启停约定）：第一次 SIGINT / SIGTERM 走优雅关闭，
+// serve 跑起服务并处理停止信号：第一次 SIGINT / SIGTERM 走优雅关闭，
 // 之后的信号交回默认处置 —— 卡在等待里时，再按一次 Ctrl-C 就该立刻结束。
 //
 // 返回值即进程退出码：正常关闭 0；Shutdown 超时被强制关闭 254；关库失败 255。

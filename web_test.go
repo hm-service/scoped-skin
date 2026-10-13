@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -45,23 +46,25 @@ func TestSitePages(t *testing.T) {
 		{"/auth", "登录", ""},
 		{"/maintain", "维护", ""},
 	}
-	for _, item := range cases {
-		recorder := testenv.Do(handler, http.MethodGet, item.path, nil, "")
-		if recorder.Code != http.StatusOK {
-			t.Fatalf("%s 状态码 = %d，想要 200", item.path, recorder.Code)
-		}
-		if got := recorder.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
-			t.Errorf("%s Content-Type = %q", item.path, got)
-		}
-		if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
-			t.Errorf("%s Cache-Control = %q，想要 no-store", item.path, got)
-		}
-		if !strings.Contains(recorder.Body.String(), item.file) {
-			t.Errorf("%s 响应体 = %q，不含 %q", item.path, recorder.Body.String(), item.file)
-		}
-		if got := recorder.Header().Get("X-Authlib-Injector-API-Location"); got != item.aliPath {
-			t.Errorf("%s X-Authlib-Injector-API-Location = %q，想要 %q", item.path, got, item.aliPath)
-		}
+	for i, item := range cases {
+		t.Run(fmt.Sprintf("%d_%s", i, item.path), func(t *testing.T) {
+			recorder := testenv.Do(handler, http.MethodGet, item.path, nil, "")
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("%s 状态码 = %d，想要 200", item.path, recorder.Code)
+			}
+			if got := recorder.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+				t.Errorf("%s Content-Type = %q", item.path, got)
+			}
+			if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
+				t.Errorf("%s Cache-Control = %q，想要 no-store", item.path, got)
+			}
+			if !strings.Contains(recorder.Body.String(), item.file) {
+				t.Errorf("%s 响应体 = %q，不含 %q", item.path, recorder.Body.String(), item.file)
+			}
+			if got := recorder.Header().Get("X-Authlib-Injector-API-Location"); got != item.aliPath {
+				t.Errorf("%s X-Authlib-Injector-API-Location = %q，想要 %q", item.path, got, item.aliPath)
+			}
+		})
 	}
 }
 
@@ -104,15 +107,17 @@ func TestSiteServesBuiltFiles(t *testing.T) {
 func TestSiteHasNoDirectoryListing(t *testing.T) {
 	handler := siteHandler(testSite())
 
-	for _, path := range []string{"/assets/", "/assets/nested", "/assets/nested/", "/assets/nope.js",
+	for i, path := range []string{"/assets/", "/assets/nested", "/assets/nested/", "/assets/nope.js",
 		"/index.html", "/auth.html", "/maintain.html", "/nope", "/nope/deep.js"} {
-		recorder := testenv.Do(handler, http.MethodGet, path, nil, "")
-		if recorder.Code != http.StatusNotFound {
-			t.Errorf("%s 状态码 = %d，想要 404", path, recorder.Code)
-		}
-		if strings.Contains(recorder.Body.String(), "app-abc123") {
-			t.Errorf("%s 回了个目录列表: %s", path, recorder.Body.String())
-		}
+		t.Run(fmt.Sprintf("%d_%s", i, path), func(t *testing.T) {
+			recorder := testenv.Do(handler, http.MethodGet, path, nil, "")
+			if recorder.Code != http.StatusNotFound {
+				t.Errorf("%s 状态码 = %d，想要 404", path, recorder.Code)
+			}
+			if strings.Contains(recorder.Body.String(), "app-abc123") {
+				t.Errorf("%s 回了个目录列表: %s", path, recorder.Body.String())
+			}
+		})
 	}
 
 	// 路径穿越：ServeMux 先按清理后的路径回 301，跟过去也只会落到普通路径；这里只要求
@@ -127,14 +132,16 @@ func TestSiteHasNoDirectoryListing(t *testing.T) {
 func TestSiteMethodNotAllowed(t *testing.T) {
 	handler := siteHandler(testSite())
 
-	for _, path := range []string{"/", "/auth", "/assets/app-abc123.js", "/favicon.svg"} {
-		recorder := testenv.Do(handler, http.MethodPost, path, nil, "")
-		if recorder.Code != http.StatusMethodNotAllowed {
-			t.Errorf("POST %s 状态码 = %d，想要 405", path, recorder.Code)
-		}
-		if got := recorder.Header().Get("Allow"); got != allowMethods {
-			t.Errorf("POST %s Allow = %q，想要 %q", path, got, allowMethods)
-		}
+	for i, path := range []string{"/", "/auth", "/assets/app-abc123.js", "/favicon.svg"} {
+		t.Run(fmt.Sprintf("%d_%s", i, path), func(t *testing.T) {
+			recorder := testenv.Do(handler, http.MethodPost, path, nil, "")
+			if recorder.Code != http.StatusMethodNotAllowed {
+				t.Errorf("POST %s 状态码 = %d，想要 405", path, recorder.Code)
+			}
+			if got := recorder.Header().Get("Allow"); got != allowMethods {
+				t.Errorf("POST %s Allow = %q，想要 %q", path, got, allowMethods)
+			}
+		})
 	}
 }
 
@@ -208,7 +215,7 @@ func TestRootHandlerWiresSiteAndApi(t *testing.T) {
 	}
 }
 
-// 访问日志在接线后的行为：页面照记，/assets/* 与 /asset/* 不记（与中间件的跳过规则一致）。
+// 访问日志在接线后的行为：页面照记，/assets/* 与 /assets/* 不记（与中间件的跳过规则一致）。
 func TestRootHandlerAccessLog(t *testing.T) {
 	instance := testenv.New(t)
 	handler := newRootHandler(instance, testSite(), defaultLimits())
@@ -234,14 +241,18 @@ func TestRootHandlerAccessLog(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"/", "/auth"} {
-		if !logged[path] {
-			t.Errorf("%s 应当写访问日志", path)
-		}
+	for i, path := range []string{"/", "/auth"} {
+		t.Run(fmt.Sprintf("logged_%d_%s", i, path), func(t *testing.T) {
+			if !logged[path] {
+				t.Errorf("%s 应当写访问日志", path)
+			}
+		})
 	}
-	for _, path := range []string{"/assets/app-abc123.js", "/livez"} {
-		if logged[path] {
-			t.Errorf("%s 不该写访问日志", path)
-		}
+	for i, path := range []string{"/assets/app-abc123.js", "/livez"} {
+		t.Run(fmt.Sprintf("silent_%d_%s", i, path), func(t *testing.T) {
+			if logged[path] {
+				t.Errorf("%s 不该写访问日志", path)
+			}
+		})
 	}
 }

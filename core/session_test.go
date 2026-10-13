@@ -48,6 +48,31 @@ func TestSessionsLifecycle(t *testing.T) {
 	}
 }
 
+// accessToken 查找走定长摘要：同长度、只差最后一位的近似令牌也要被拒。
+func TestSessionsGetRejectsLookalike(t *testing.T) {
+	store := core.NewSessions()
+	accessToken, _, err := store.Create("uuid-steve", "")
+	if err != nil {
+		t.Fatalf("颁发令牌失败: %v", err)
+	}
+	if _, ok := store.Get(accessToken); !ok {
+		t.Fatalf("正确令牌应当查得到")
+	}
+
+	lookalike := accessToken[:len(accessToken)-1]
+	if accessToken[len(accessToken)-1] == '0' {
+		lookalike += "1"
+	} else {
+		lookalike += "0"
+	}
+	if session, ok := store.Get(lookalike); ok {
+		t.Fatalf("同长度近似令牌不该查得到: %+v", session)
+	}
+	if _, ok := store.Get(accessToken[:len(accessToken)-1]); ok {
+		t.Fatalf("截短的令牌不该查得到")
+	}
+}
+
 // 规范：服务端也应对令牌数量加以限制，超出时先吊销最旧的。
 func TestSessionsCapTokensPerUser(t *testing.T) {
 	store := core.NewSessions()

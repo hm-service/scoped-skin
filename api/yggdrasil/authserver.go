@@ -1,10 +1,24 @@
 package yggdrasil
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"net/http"
 
 	"scoped-skin/httpx"
 )
+
+// equalToken 用定长摘要恒时比较：直接比字符串会把长度与「前几位对了」漏成时间差。
+func equalToken(left, right string) bool {
+	leftDigest := sha256.Sum256([]byte(left))
+	rightDigest := sha256.Sum256([]byte(right))
+	return subtle.ConstantTimeCompare(leftDigest[:], rightDigest[:]) == 1
+}
+
+// clientTokenMatches 报告请求带的 clientToken 是否对得上；空表示这次不校验（规范允许）。
+func clientTokenMatches(stored, presented string) bool {
+	return presented == "" || equalToken(stored, presented)
+}
 
 // 规范的请求体。没有列进来的字段（agent 等）按规范不需要校验，直接忽略。
 
@@ -48,8 +62,9 @@ type refreshResponse struct {
 	User            *userInfo `json:"user,omitempty"`
 }
 
-// 防爆破不做限流，靠的是恒定请求时间（DESIGN.md 3.5）：无论账号存不存在，这次校验都至少
+// 防爆破不做限流，靠的是恒定请求时间：无论账号存不存在，这次校验都至少
 // 花掉 1 秒才返回，于是单个客户端的请求频率天然被压住。限流交给反向代理。
+// 这是和站点登录同一道密码闸门，成功与失败都要留审计。
 func (s *Server) handleAuthenticate(w http.ResponseWriter, r *http.Request) {
 	payload, ok := decode[authenticateRequest](w, r)
 	if !ok {
@@ -59,11 +74,21 @@ func (s *Server) handleAuthenticate(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "Invalid clientToken")
 		return
 	}
+	ip := s.App.ClientIP(r)
 	user := s.App.VerifyCredentials(payload.Username, payload.Password)
 	if user == nil {
+		s.App.Audit.Write("login", ip, map[string]any{
+			"username": payload.Username,
+			"result":   "denied",
+		})
 		forbidden(w, errInvalidCredentials)
 		return
 	}
+	s.App.Audit.Write("login", ip, map[string]any{
+		"username": user.Username,
+		"result":   "ok",
+		"uuid":     user.UUID,
+	})
 
 	accessToken, clientToken, err := s.App.Sessions.Create(user.UUID, payload.ClientToken)
 	if err != nil {
@@ -95,7 +120,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session, ok := s.App.Sessions.Get(payload.AccessToken)
-	if !ok || (payload.ClientToken != "" && session.ClientToken != payload.ClientToken) {
+	if !ok || !clientTokenMatches(session.ClientToken, payload.ClientToken) {
 		forbidden(w, errInvalidToken)
 		return
 	}
@@ -142,7 +167,7 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session, ok := s.App.Sessions.Get(payload.AccessToken)
-	if !ok || (payload.ClientToken != "" && session.ClientToken != payload.ClientToken) {
+	if !ok || !clientTokenMatches(session.ClientToken, payload.ClientToken) {
 		forbidden(w, errInvalidToken)
 		return
 	}
@@ -160,17 +185,27 @@ func (s *Server) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 }
 
 // 规范的安全提示：该 API 同样可用于判断密码的正确性，所以和 authenticate 一样走恒定耗时的
-// 校验入口（DESIGN.md 3.5）。
+// 校验入口，也一样要留审计。
 func (s *Server) handleSignout(w http.ResponseWriter, r *http.Request) {
 	payload, ok := decode[signoutRequest](w, r)
 	if !ok {
 		return
 	}
+	ip := s.App.ClientIP(r)
 	user := s.App.VerifyCredentials(payload.Username, payload.Password)
 	if user == nil {
+		s.App.Audit.Write("login", ip, map[string]any{
+			"username": payload.Username,
+			"result":   "denied",
+		})
 		forbidden(w, errInvalidCredentials)
 		return
 	}
+	s.App.Audit.Write("login", ip, map[string]any{
+		"username": user.Username,
+		"result":   "ok",
+		"uuid":     user.UUID,
+	})
 	s.App.Sessions.DeleteUser(user.UUID)
 	w.WriteHeader(http.StatusNoContent)
 }

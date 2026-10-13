@@ -9,7 +9,7 @@ import (
 	"scoped-skin/core"
 )
 
-// DESIGN.md 1.5：权限收紧只改权限，不碰内容；路径不存在也不算错。
+// 权限收紧只改权限，不碰内容；路径不存在也不算错。
 func TestTightenPerm(t *testing.T) {
 	t.Parallel()
 

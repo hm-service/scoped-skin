@@ -48,7 +48,7 @@ type page struct {
 // 一个页面因此只有一个 URL。
 var pages = map[string]page{
 	"/": {file: "index.html", headers: map[string]string{
-		// DESIGN.md 3.1：让启动器从站点地址发现 Yggdrasil 服务。
+		// 让启动器从站点地址发现 Yggdrasil 服务。
 		"X-Authlib-Injector-API-Location": yggdrasil.AliasPrefix,
 	}},
 	"/auth":     {file: "auth.html"},

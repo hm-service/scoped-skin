@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-// DESIGN.md 1.5：DATA_DIR 与其中文件的权限约定。
+// DATA_DIR 与其中文件的权限约定。
 const (
 	DataDirPerm = 0o700 // 数据目录：只有属主能进
 	SecretPerm  = 0o600 // 私钥、数据库（含 -wal / -shm）

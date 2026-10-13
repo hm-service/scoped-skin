@@ -13,7 +13,7 @@ import (
 	"scoped-skin/api"
 )
 
-// DESIGN.md 5.3：闸门把同时在处理的请求卡在槽位数以内，超出的排队。
+// 闸门把同时在处理的请求卡在槽位数以内，超出的排队。
 func TestConcurrencyCapsInFlightRequests(t *testing.T) {
 	t.Parallel()
 
@@ -122,7 +122,7 @@ func TestAccessLogSkipsStaticAndLivez(t *testing.T) {
 	_, handler := newSite(t)
 	read := captureLogs(t)
 
-	silent := []string{"/assets/app-abc.js", "/asset/" + strings.Repeat("a", 64), "/livez"}
+	silent := []string{"/assets/app-abc.js", "/api/assets/" + strings.Repeat("a", 64), "/livez"}
 	for _, path := range silent {
 		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
 	}
@@ -130,24 +130,41 @@ func TestAccessLogSkipsStaticAndLivez(t *testing.T) {
 	for _, path := range noisy {
 		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
 	}
+	// HEAD 由同一条 GET 规则应答：探针被 HEAD 敲时 /livez 依旧不该留痕
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodHead, "/livez", nil))
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodHead, "/readyz", nil))
 
 	logged := map[string]bool{}
+	headLogged := map[string]bool{}
 	for _, record := range read() {
 		if record["msg"] != "HTTP Request" {
 			continue
 		}
 		if path, ok := record["path"].(string); ok {
 			logged[path] = true
+			if record["method"] == http.MethodHead {
+				headLogged[path] = true
+			}
 		}
 	}
 	for _, path := range silent {
-		if logged[path] {
-			t.Errorf("%s 不该写访问日志", path)
-		}
+		t.Run(path, func(t *testing.T) {
+			if logged[path] {
+				t.Errorf("%s 不该写访问日志", path)
+			}
+		})
 	}
 	for _, path := range noisy {
-		if !logged[path] {
-			t.Errorf("%s 应当写访问日志", path)
-		}
+		t.Run(path, func(t *testing.T) {
+			if !logged[path] {
+				t.Errorf("%s 应当写访问日志", path)
+			}
+		})
+	}
+	if headLogged["/livez"] {
+		t.Error("HEAD /livez 不该写访问日志")
+	}
+	if !headLogged["/readyz"] {
+		t.Error("HEAD /readyz 应当写访问日志")
 	}
 }

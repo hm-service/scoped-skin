@@ -24,15 +24,17 @@ func TestAdminCannotDemoteLastAdminOverHTTP(t *testing.T) {
 	adminUUID := instance.Store.UserByUsername("admin").UUID
 
 	for _, role := range []string{"guest", "normal"} {
-		recorder := testenv.Do(handler, http.MethodPatch, "/api/admin/users/"+adminUUID,
-			map[string]any{"role": role}, token)
-		if recorder.Code != http.StatusBadRequest {
-			t.Errorf("把最后一个管理员降成 %s 的状态码 = %d，想要 400（%s）",
-				role, recorder.Code, recorder.Body.String())
-		}
-		if got := detail(t, recorder); got != "这是最后一个管理员，不能降级" {
-			t.Errorf("降成 %s 的 detail = %q，想要 %q", role, got, "这是最后一个管理员，不能降级")
-		}
+		t.Run(role, func(t *testing.T) {
+			recorder := testenv.Do(handler, http.MethodPatch, "/api/admin/users/"+adminUUID,
+				map[string]any{"role": role}, token)
+			if recorder.Code != http.StatusBadRequest {
+				t.Errorf("把最后一个管理员降成 %s 的状态码 = %d，想要 400（%s）",
+					role, recorder.Code, recorder.Body.String())
+			}
+			if got := detail(t, recorder); got != "这是最后一个管理员，不能降级" {
+				t.Errorf("降成 %s 的 detail = %q，想要 %q", role, got, "这是最后一个管理员，不能降级")
+			}
+		})
 	}
 	if after := instance.Store.User(adminUUID); after == nil || after.Role != "admin" {
 		t.Fatalf("被拒的降级却改动了库里状态: %+v", after)
@@ -54,33 +56,37 @@ func TestAdminCannotDemoteLastAdminOverHTTP(t *testing.T) {
 	}
 }
 
-// DESIGN.md 5.1：/api/admin/* 只给 admin；normal / guest 都要 403。
+// /api/admin/* 只给 admin；normal / guest 都要 403。
 func TestAdminRoutesRejectNonAdmin(t *testing.T) {
 	instance, handler := newSite(t)
 
 	for _, account := range []string{"guest", "steve"} {
-		token := testenv.Token(t, instance, account)
-		for _, call := range []struct {
-			method, path string
-			body         any
-		}{
-			{http.MethodGet, "/api/admin/users", nil},
-			{http.MethodPost, "/api/admin/users", map[string]any{
-				"username": "sneaky", "password": "sneaky123", "player_name": "sneaky",
-			}},
-			{http.MethodPatch, "/api/admin/users/" + core.OfflineUUID("steve"),
-				map[string]any{"role": "guest"}},
-			{http.MethodDelete, "/api/admin/users/" + core.OfflineUUID("steve"), nil},
-		} {
-			recorder := testenv.Do(handler, call.method, call.path, call.body, token)
-			if recorder.Code != http.StatusForbidden {
-				t.Errorf("%s %s（%s）状态码 = %d，想要 403（%s）",
-					call.method, call.path, account, recorder.Code, recorder.Body.String())
+		t.Run(account, func(t *testing.T) {
+			token := testenv.Token(t, instance, account)
+			for _, call := range []struct {
+				method, path string
+				body         any
+			}{
+				{http.MethodGet, "/api/admin/users", nil},
+				{http.MethodPost, "/api/admin/users", map[string]any{
+					"username": "sneaky", "password": "sneaky123", "player_name": "sneaky",
+				}},
+				{http.MethodPatch, "/api/admin/users/" + core.OfflineUUID("steve"),
+					map[string]any{"role": "guest"}},
+				{http.MethodDelete, "/api/admin/users/" + core.OfflineUUID("steve"), nil},
+			} {
+				t.Run(call.method+" "+call.path, func(t *testing.T) {
+					recorder := testenv.Do(handler, call.method, call.path, call.body, token)
+					if recorder.Code != http.StatusForbidden {
+						t.Errorf("%s %s（%s）状态码 = %d，想要 403（%s）",
+							call.method, call.path, account, recorder.Code, recorder.Body.String())
+					}
+					if got := detail(t, recorder); got != "需要管理员身份" {
+						t.Errorf("%s %s（%s）detail = %q", call.method, call.path, account, got)
+					}
+				})
 			}
-			if got := detail(t, recorder); got != "需要管理员身份" {
-				t.Errorf("%s %s（%s）detail = %q", call.method, call.path, account, got)
-			}
-		}
+		})
 	}
 }
 
@@ -248,8 +254,8 @@ func TestUploadOverBodyLimitIsRejected(t *testing.T) {
 
 	recorder := doUpload(t, handler, token, [][2]string{{"kind", "skin.steve"}},
 		"huge.bin", make([]byte, api.MaxRequestBytes+512*1024))
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("超过请求体上限状态码 = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("超过请求体上限状态码 = %d，想要 413（%s）", recorder.Code, recorder.Body.String())
 	}
 	if got := detail(t, recorder); got != "请求体不能超过 1 MB" {
 		t.Errorf("超过请求体上限 detail = %q，想要 %q", got, "请求体不能超过 1 MB")
@@ -305,7 +311,7 @@ func TestLibraryQueryParameterEdges(t *testing.T) {
 	}
 
 	// 找不到的贴图字节 → JSON 404
-	recorder = testenv.Do(handler, http.MethodGet, "/asset/"+strings.Repeat("0", 64), nil, "")
+	recorder = testenv.Do(handler, http.MethodGet, "/api/assets/"+strings.Repeat("0", 64), nil, "")
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("不存在的贴图状态码 = %d，想要 404（%s）", recorder.Code, recorder.Body.String())
 	}
@@ -316,7 +322,7 @@ func TestLibraryQueryParameterEdges(t *testing.T) {
 	// 页面（/auth、/maintain 这些）由站点外壳负责，见根目录 web_test.go。
 }
 
-// DESIGN.md 5.1 的回归：guest 收紧成只读身份组 —— 任何会改持久化资源的写操作都要 403
+// guest 收紧成只读身份组 —— 任何会改持久化资源的写操作都要 403
 // （文案键 auth.write），但读接口（列表 / 标签 / me / 预检 / 贴图字节）照常可用。
 func TestGuestIsReadOnly(t *testing.T) {
 	instance, handler := newSite(t)
@@ -335,14 +341,16 @@ func TestGuestIsReadOnly(t *testing.T) {
 		{"上传", http.MethodPost, "/api/skins", map[string]any{}},
 	}
 	for _, call := range writes {
-		recorder := testenv.Do(handler, call.method, call.path, call.body, guestToken)
-		if recorder.Code != http.StatusForbidden {
-			t.Errorf("guest %s 状态码 = %d，想要 403（%s）", call.name, recorder.Code, recorder.Body.String())
-			continue
-		}
-		if got := detail(t, recorder); got != "当前身份组是只读的，不能修改任何资源" {
-			t.Errorf("guest %s detail = %q，想要只读身份组文案", call.name, got)
-		}
+		t.Run(call.name, func(t *testing.T) {
+			recorder := testenv.Do(handler, call.method, call.path, call.body, guestToken)
+			if recorder.Code != http.StatusForbidden {
+				t.Errorf("guest %s 状态码 = %d，想要 403（%s）", call.name, recorder.Code, recorder.Body.String())
+				return
+			}
+			if got := detail(t, recorder); got != "当前身份组是只读的，不能修改任何资源" {
+				t.Errorf("guest %s detail = %q，想要只读身份组文案", call.name, got)
+			}
+		})
 	}
 
 	// 被拒的写操作不能留下任何痕迹：既没收藏，也没换装
@@ -368,17 +376,19 @@ func TestGuestIsReadOnly(t *testing.T) {
 		{"披风列表", http.MethodGet, "/api/library?category=cape", nil},
 		{"标签", http.MethodGet, "/api/tags", nil},
 		{"账号", http.MethodGet, "/api/me", nil},
-		{"贴图字节", http.MethodGet, "/asset/" + assetID, nil},
+		{"贴图字节", http.MethodGet, "/api/assets/" + assetID, nil},
 		{"预检", http.MethodPost, "/api/precheck", map[string]any{
 			"kind": "skin.steve",
 			"data": base64.StdEncoding.EncodeToString(skinPNG),
 		}},
 	}
 	for _, call := range reads {
-		recorder := testenv.Do(handler, call.method, call.path, call.body, guestToken)
-		if recorder.Code != http.StatusOK {
-			t.Errorf("guest %s 状态码 = %d，想要 200（%s）", call.name, recorder.Code, recorder.Body.String())
-		}
+		t.Run(call.name, func(t *testing.T) {
+			recorder := testenv.Do(handler, call.method, call.path, call.body, guestToken)
+			if recorder.Code != http.StatusOK {
+				t.Errorf("guest %s 状态码 = %d，想要 200（%s）", call.name, recorder.Code, recorder.Body.String())
+			}
+		})
 	}
 
 	// 删除仍走 admin 闸门：guest 403，但文案是 auth.admin 而不是只读身份组
@@ -400,20 +410,22 @@ func TestGuestIsReadOnly(t *testing.T) {
 	}
 }
 
-// /readyz 的 token 门槛（DESIGN.md 3.2）：配了 READYZ_TOKEN 就只认对得上的 ?token=，
+// /readyz 的 token 门槛：配了 READYZ_TOKEN 就只认对得上的 ?token=，
 // 其余一律 401 且无响应体；没配则维持公开。/livez 永远不需要 token。
 func TestReadyzTokenGate(t *testing.T) {
 	instance := testenv.NewWith(t, func(cfg *app.Config) { cfg.ReadyzToken = "s3cret-token" })
 	handler := api.NewHandler(instance)
 
 	for _, target := range []string{"/readyz", "/readyz?token=", "/readyz?token=wrong", "/readyz?token=s3cret-toke"} {
-		recorder := testenv.Do(handler, http.MethodGet, target, nil, "")
-		if recorder.Code != http.StatusUnauthorized {
-			t.Errorf("%s 状态码 = %d，想要 401", target, recorder.Code)
-		}
-		if recorder.Body.Len() != 0 {
-			t.Errorf("%s 的 401 不该带响应体: %q", target, recorder.Body.String())
-		}
+		t.Run("需要 token "+target, func(t *testing.T) {
+			recorder := testenv.Do(handler, http.MethodGet, target, nil, "")
+			if recorder.Code != http.StatusUnauthorized {
+				t.Errorf("%s 状态码 = %d，想要 401", target, recorder.Code)
+			}
+			if recorder.Body.Len() != 0 {
+				t.Errorf("%s 的 401 不该带响应体: %q", target, recorder.Body.String())
+			}
+		})
 	}
 
 	if recorder := testenv.Do(handler, http.MethodGet, "/readyz?token=s3cret-token", nil, ""); recorder.Code != http.StatusOK {
@@ -426,8 +438,10 @@ func TestReadyzTokenGate(t *testing.T) {
 	// 没配 READYZ_TOKEN：维持公开，带不带 token 都 200
 	open := api.NewHandler(testenv.New(t))
 	for _, target := range []string{"/readyz", "/readyz?token=whatever"} {
-		if recorder := testenv.Do(open, http.MethodGet, target, nil, ""); recorder.Code != http.StatusOK {
-			t.Errorf("未配 READYZ_TOKEN 时 %s 状态码 = %d，想要 200", target, recorder.Code)
-		}
+		t.Run("未配 token "+target, func(t *testing.T) {
+			if recorder := testenv.Do(open, http.MethodGet, target, nil, ""); recorder.Code != http.StatusOK {
+				t.Errorf("未配 READYZ_TOKEN 时 %s 状态码 = %d，想要 200", target, recorder.Code)
+			}
+		})
 	}
 }

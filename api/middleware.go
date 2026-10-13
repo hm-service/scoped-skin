@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// DESIGN.md 5.2「校验边界」：请求体上限（先看 Content-Length，再分块读兜底）。
+// 「校验边界」：请求体上限（先看 Content-Length，再分块读兜底）。
 // 贴图上限只有 32 KiB，1 MiB 的余量已经足够（base64 预检按 4/3 膨胀也远够）。
 const MaxRequestBytes = 1 * 1024 * 1024
 
@@ -29,7 +29,7 @@ func (rec *statusRecorder) Write(body []byte) (int, error) {
 	return rec.ResponseWriter.Write(body)
 }
 
-// 两半各有一个独立闸门，槽位数可被环境变量覆盖（AGENTS.md 的环境变量约定）：
+// 两半各有一个独立闸门，槽位数可被环境变量覆盖：
 // API 那一半管住 goroutine / SQLite / Argon2，静态那一半只防止一次页面加载把内嵌文件
 // 同时读爆 —— 两边各占各自的槽位，谁也不排谁的队。
 const (
@@ -55,7 +55,7 @@ func Concurrency(limit int, next http.Handler) http.Handler {
 	})
 }
 
-// SecurityHeaders 给所有响应补上三个静态安全头（DESIGN.md 5.3）：nosniff 挡 MIME 嗅探，
+// SecurityHeaders 给所有响应补上三个静态安全头：nosniff 挡 MIME 嗅探，
 // no-referrer 不外泄地址，DENY 禁止被 iframe 嵌套。CSP 暂不引入。
 func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -99,15 +99,20 @@ func Logging(clientIP func(*http.Request) string, next http.Handler) http.Handle
 	})
 }
 
-// skipAccessLog 判断这次请求要不要记访问日志：只放过纯静态的 GET 与存活探针。
+// skipAccessLog 判断这次请求要不要记访问日志：只放过构建产物与贴图字节的 GET，
+// 以及 GET / HEAD 的存活探针（HEAD 由 GET 处理器应答，同样是探针噪音）。
 func skipAccessLog(r *http.Request) bool {
-	if r.Method != http.MethodGet {
+	path := r.URL.Path
+	switch r.Method {
+	case http.MethodGet:
+		return strings.HasPrefix(path, "/assets/") ||
+			strings.HasPrefix(path, "/api/assets/") ||
+			path == "/livez"
+	case http.MethodHead:
+		return path == "/livez"
+	default:
 		return false
 	}
-	path := r.URL.Path
-	return strings.HasPrefix(path, "/assets/") ||
-		strings.HasPrefix(path, "/asset/") ||
-		path == "/livez"
 }
 
 // 放在中间件里才有意义 —— 等到 handler 里再查，multipart 已经被解析完了。
@@ -115,7 +120,7 @@ func LimitBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if length := r.Header.Get("Content-Length"); length != "" {
 			if size, err := strconv.ParseInt(length, 10, 64); err == nil && size > MaxRequestBytes {
-				fail(w, r, http.StatusBadRequest, "request.too-big")
+				fail(w, r, http.StatusRequestEntityTooLarge, "request.too-big")
 				return
 			}
 		}

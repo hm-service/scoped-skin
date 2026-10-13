@@ -1,4 +1,4 @@
-// Package api 是站点的 HTTP 层：探针、/asset/* 的贴图字节、/api/* ，以及挂在其下的
+// Package api 是站点的 HTTP 层：探针、/assets/* 的贴图字节、/api/* ，以及挂在其下的
 // Yggdrasil（authlib-injector 兼容）接口。页面与静态资源不在这里 —— 那是站点外壳
 // （根目录 web.go）的事，main.go 负责把两者接到一棵路由树上。
 package api
@@ -85,7 +85,7 @@ func NewMux(instance *app.App) *http.ServeMux {
 		{http.MethodGet, "/livez", server.handleLivez},
 		{http.MethodGet, "/readyz", server.handleReadyz},
 
-		{http.MethodGet, "/asset/{asset_id}", server.handleAsset},
+		{http.MethodGet, "/api/assets/{asset_id}", server.handleAsset},
 
 		{http.MethodPost, "/api/auth/login", server.handleLogin},
 		{http.MethodGet, "/api/auth/session", server.handleSession},

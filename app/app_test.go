@@ -35,7 +35,7 @@ func openInstance(t *testing.T, mutate func(*Config)) *App {
 	return instance
 }
 
-// DESIGN.md 1.2 / 1.1：首次启动只建一个管理员账号，密码取自 ADMIN_PASSWORD。
+// 首次启动只建一个管理员账号，密码取自 ADMIN_PASSWORD。
 func TestFirstStartCreatesSingleAdmin(t *testing.T) {
 	t.Parallel()
 
@@ -48,7 +48,7 @@ func TestFirstStartCreatesSingleAdmin(t *testing.T) {
 	if err != nil || len(users) != 1 {
 		t.Fatalf("首次启动应当只有 1 个账号，实际 %d (%v)", len(users), err)
 	}
-	// ADMIN_USERNAME 只决定登录名；角色名固定 admin（DESIGN.md 1.1）
+	// ADMIN_USERNAME 只决定登录名；角色名固定 admin
 	admin := users[0]
 	if admin.Username != "root" || admin.Role != "admin" || admin.PlayerName != "admin" {
 		t.Fatalf("管理员账号不对: %+v", admin)
@@ -138,13 +138,13 @@ func TestReopenKeepsExistingAccounts(t *testing.T) {
 	}
 }
 
-// DESIGN.md 5.3：Argon2id 的并发上限是固定的 4。
+// Argon2id 的并发上限是固定的 4。
 func TestArgonGateSize(t *testing.T) {
 	t.Parallel()
 
 	instance := openInstance(t, nil)
 	if ArgonConcurrency != 4 {
-		t.Fatalf("ArgonConcurrency = %d，DESIGN.md 要求 4", ArgonConcurrency)
+		t.Fatalf("ArgonConcurrency = %d，要求 4", ArgonConcurrency)
 	}
 	if got := cap(instance.argon); got != 4 {
 		t.Fatalf("信号量容量 = %d，想要 4", got)
@@ -174,7 +174,7 @@ func TestVerifyCredentialsUnderConcurrency(t *testing.T) {
 	}
 }
 
-// DESIGN.md 3.2 / 1.5：启动时把权限收紧，readyz 持续断言；谁把权限放开就立刻不认。
+// 启动时把权限收紧，readyz 持续断言；谁把权限放开就立刻不认。
 func TestReadyzGuaranteesDataDirPermissions(t *testing.T) {
 	t.Parallel()
 
@@ -232,5 +232,33 @@ func TestReadyzGuaranteesDataDirPermissions(t *testing.T) {
 	}
 	if err := instance.Ready(); err == nil {
 		t.Fatalf("数据目录变成 0755 之后 readyz 还报就绪")
+	}
+}
+
+// DATA_DIR="." 指的是真实工作目录，同样要在启动时收紧、被 readyz 断言；
+// 先放开再启动，才能证明收紧确实发生了而不是本来就这样。
+func TestReadyzTightensDotDataDir(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.Chmod(".", 0o755); err != nil {
+		t.Fatalf("改权限失败: %v", err)
+	}
+
+	instance := openInstance(t, func(cfg *Config) { cfg.DataDir = "." })
+
+	info, err := os.Stat(".")
+	if err != nil {
+		t.Fatalf("stat .: %v", err)
+	}
+	if got := info.Mode().Perm(); got != core.DataDirPerm {
+		t.Fatalf("数据目录权限 = %o，想要 %o", got, core.DataDirPerm)
+	}
+	if err := instance.Ready(); err != nil {
+		t.Fatalf("就绪探针不该报错: %v", err)
+	}
+	if err := os.Chmod(".", 0o755); err != nil {
+		t.Fatalf("改权限失败: %v", err)
+	}
+	if err := instance.Ready(); err == nil {
+		t.Fatalf("目录被放开成 0755 之后 readyz 还报就绪")
 	}
 }

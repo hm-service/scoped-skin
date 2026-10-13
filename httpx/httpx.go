@@ -42,7 +42,7 @@ func Unauthorized(w http.ResponseWriter, detail string) {
 	Fail(w, http.StatusUnauthorized, detail)
 }
 
-// Proxies 决定客户端 IP 从哪里取（DESIGN.md 5.5）：只有连接的对端落在可信网段里
+// Proxies 决定客户端 IP 从哪里取：只有连接的对端落在可信网段里
 // （也就是请求确实来自我们自己的反向代理）时才认反代头，否则一律用对端地址。
 // 这样即使服务被直接访问、有人自己伪造 X-Forwarded-For，也拿不到「别人」的身份。
 type Proxies struct {
@@ -99,6 +99,12 @@ func (p *Proxies) ClientIP(r *http.Request) string {
 		return addr.Unmap().String()
 	}
 	return peer
+}
+
+// PeerTrusted 判断连接的对端是否落在可信网段里：认反代头之前都要先问这一句。
+func (p *Proxies) PeerTrusted(r *http.Request) bool {
+	addr, err := netip.ParseAddr(peerIP(r.RemoteAddr))
+	return err == nil && p != nil && p.isTrusted(addr)
 }
 
 func (p *Proxies) isTrusted(addr netip.Addr) bool {

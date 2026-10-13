@@ -1,6 +1,7 @@
 package core
 
 import (
+	"crypto/subtle"
 	"sync"
 	"time"
 )
@@ -21,15 +22,23 @@ type Session struct {
 	ExpiresAt   time.Time
 }
 
+// sessionEntry 把会话与它的定长摘要放一起：键是摘要，值里再留一份用于恒时比较；
+// 存值而不是指针，表外拿不到可写句柄。
+type sessionEntry struct {
+	digest  [32]byte
+	session Session
+}
+
 // Sessions 是 accessToken -> 会话的内存表，进程重启即失效。
+// 表按 accessToken 的定长摘要做键，明文不参与查找，免得长度与匹配前缀漏成时间差。
 type Sessions struct {
 	mu      sync.Mutex
-	byToken map[string]Session  // 存值而不是指针：表外拿不到可写句柄
-	byUser  map[string][]string // 角色 UUID -> 该账号颁出的 accessToken（按颁发顺序）
+	byToken map[string]sessionEntry // 键是 accessToken 的定长摘要
+	byUser  map[string][]string     // 角色 UUID -> 该账号颁出的 accessToken（按颁发顺序）
 }
 
 func NewSessions() *Sessions {
-	return &Sessions{byToken: make(map[string]Session), byUser: make(map[string][]string)}
+	return &Sessions{byToken: make(map[string]sessionEntry), byUser: make(map[string][]string)}
 }
 
 // Create 颁发新令牌。没给 clientToken 就随机生成一个（规范要求无符号 UUID 形状）。
@@ -45,12 +54,16 @@ func (s *Sessions) Create(playerUUID, clientToken string) (string, string, error
 		}
 	}
 	now := time.Now()
+	digest := tokenDigest(accessToken)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.byToken[accessToken] = Session{
-		PlayerUUID:  playerUUID,
-		ClientToken: clientToken,
-		ExpiresAt:   now.Add(SessionTTL),
+	s.byToken[string(digest[:])] = sessionEntry{
+		digest: digest,
+		session: Session{
+			PlayerUUID:  playerUUID,
+			ClientToken: clientToken,
+			ExpiresAt:   now.Add(SessionTTL),
+		},
 	}
 	// 列表整体重建，而不是 append 到原有切片上：append 在容量够时会与 byUser 共享同一块
 	// 底层数组，「谁在哪个长度上写了什么」于是变成必须靠约定维持的东西 —— 漏令牌那个 bug
@@ -70,17 +83,18 @@ func (s *Sessions) Create(playerUUID, clientToken string) (string, string, error
 //
 // 返回副本而不是表里的那条：调用方拿到的东西改不动表，也就不用把锁带出临界区。
 func (s *Sessions) Get(accessToken string) (Session, bool) {
+	digest := tokenDigest(accessToken)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	session, ok := s.byToken[accessToken]
-	if !ok {
+	entry, ok := s.byToken[string(digest[:])]
+	if !ok || subtle.ConstantTimeCompare(entry.digest[:], digest[:]) != 1 {
 		return Session{}, false
 	}
-	if time.Now().After(session.ExpiresAt) {
+	if time.Now().After(entry.session.ExpiresAt) {
 		s.drop(accessToken)
 		return Session{}, false
 	}
-	return session, true
+	return entry.session, true
 }
 
 // Delete 吊销一条令牌（不存在也当成功）。
@@ -95,7 +109,7 @@ func (s *Sessions) DeleteUser(playerUUID string) int {
 	defer s.mu.Unlock()
 	tokens := s.byUser[playerUUID]
 	for _, token := range tokens {
-		delete(s.byToken, token)
+		delete(s.byToken, tokenKey(token))
 	}
 	delete(s.byUser, playerUUID)
 	return len(tokens)
@@ -109,22 +123,23 @@ func (s *Sessions) Count(playerUUID string) int {
 
 // drop 必须在持锁状态下调用。
 func (s *Sessions) drop(accessToken string) {
-	session, ok := s.byToken[accessToken]
+	key := tokenKey(accessToken)
+	entry, ok := s.byToken[key]
 	if !ok {
 		return
 	}
-	delete(s.byToken, accessToken)
+	delete(s.byToken, key)
 	// 必须另起一个底层数组：Create 里 `tokens := append(s.byUser[uuid], ...)` 可能
 	// 与这里就地压缩的是同一块内存，压完再 tokens = tokens[1:] 会把列表改错（漏一条、
 	// 重一条），那条漏掉的令牌从此吊销不掉。
-	tokens := s.byUser[session.PlayerUUID]
+	tokens := s.byUser[entry.session.PlayerUUID]
 	kept := make([]string, 0, len(tokens))
 	for _, token := range tokens {
 		if token != accessToken {
 			kept = append(kept, token)
 		}
 	}
-	s.byUser[session.PlayerUUID] = kept
+	s.byUser[entry.session.PlayerUUID] = kept
 }
 
 // joinRecord 是一条进服暗号：serverId + 发请求的客户端 IP。

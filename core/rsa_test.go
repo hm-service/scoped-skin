@@ -49,9 +49,11 @@ func TestSigningKeysGenerateAndReload(t *testing.T) {
 		t.Fatalf("加载密钥失败: %v", err)
 	}
 	for _, name := range []string{"private.pem", "public.pem"} {
-		if _, err := os.Stat(filepath.Join(dataDir, name)); err != nil {
-			t.Fatalf("没有落盘 %s: %v", name, err)
-		}
+		t.Run(name, func(t *testing.T) {
+			if _, err := os.Stat(filepath.Join(dataDir, name)); err != nil {
+				t.Fatalf("没有落盘 %s: %v", name, err)
+			}
+		})
 	}
 	publicPEM := keys.PublicPEM()
 	if !strings.HasPrefix(publicPEM, "-----BEGIN PUBLIC KEY-----") {

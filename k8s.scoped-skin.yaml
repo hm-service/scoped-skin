@@ -10,6 +10,8 @@ data:
     PORT: "8080"
     READYZ_TOKEN: "your_readyz_token"
     TRUSTED_PROXIES: "127.0.0.1/32,::1/128,10.89.2.0/24"
+    MAX_API_CONCURRENCY: 128
+    MAX_STATIC_CONCURRENCY: 64
     GOMEMLIMIT: "128MiB"
 
 ---
@@ -64,6 +66,14 @@ spec:
           livenessProbe:
               httpGet:
                   path: /livez
+                  port: http
+              initialDelaySeconds: 5
+              periodSeconds: 30
+              timeoutSeconds: 3
+              failureThreshold: 3
+          readinessProbe:
+              httpGet:
+                  path: /readyz?token=your_readyz_token
                   port: http
               initialDelaySeconds: 5
               periodSeconds: 30
