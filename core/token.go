@@ -23,9 +23,7 @@ var sessionBase64 = base64.RawURLEncoding
 
 // SiteTokens 签发与校验站点凭据：
 //
-//	base64url(exp|uuid|nonce) + "." + base64url(HMAC-SHA256(key, "v1|" + 载荷))
-//
-// 载荷在规范的 exp|nonce 之外多带一个 uuid：本站是多账号的，凭据得自己说明它属于谁。
+//	base64url(uuid|exp|nonce) + "." + base64url(HMAC-SHA256(key, "v1|" + 载荷))
 type SiteTokens struct {
 	key []byte
 }
@@ -42,8 +40,8 @@ func (t *SiteTokens) Issue(uuid string, now time.Time) (string, error) {
 		return "", err
 	}
 	payload := sessionBase64.EncodeToString([]byte(strings.Join([]string{
-		strconv.FormatInt(now.Add(SessionTokenTTL).Unix(), 10),
 		uuid,
+		strconv.FormatInt(now.Add(SessionTokenTTL).Unix(), 10),
 		sessionBase64.EncodeToString(nonce),
 	}, "|")))
 	return payload + "." + sessionBase64.EncodeToString(t.sign(payload)), nil
@@ -76,14 +74,14 @@ func (t *SiteTokens) sign(payload string) []byte {
 	return mac.Sum(nil)
 }
 
-// parseSessionPayload 拆开 exp|uuid|nonce。
+// parseSessionPayload 拆开 uuid|exp|nonce。
 func parseSessionPayload(raw string) (int64, string, bool) {
-	exp, rest, found := strings.Cut(raw, "|")
-	if !found {
+	uuid, rest, found := strings.Cut(raw, "|")
+	if !found || uuid == "" {
 		return 0, "", false
 	}
-	uuid, _, found := strings.Cut(rest, "|")
-	if !found || uuid == "" {
+	exp, _, found := strings.Cut(rest, "|")
+	if !found {
 		return 0, "", false
 	}
 	seconds, err := strconv.ParseInt(exp, 10, 64)

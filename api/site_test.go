@@ -645,8 +645,8 @@ func TestAdminUsers(t *testing.T) {
 
 	// 最后一个管理员不能删
 	recorder = testenv.Do(handler, http.MethodDelete, "/api/admin/users/"+adminUUID, nil, adminToken)
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("删最后管理员状态码 = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("删最后管理员状态码 = %d，想要 409（%s）", recorder.Code, recorder.Body.String())
 	}
 	if got := detail(t, recorder); got != "这是最后一个管理员，不能删除" {
 		t.Errorf("detail = %q，想要 %q", got, "这是最后一个管理员，不能删除")

@@ -21,11 +21,12 @@
 | TRUSTED_PROXIES        | `127.0.0.1/32,::1/128` | 可信反向代理网段，见 [5.5](#55-源-ip-与反向代理)           |
 | READYZ_TOKEN           | 空（不校验）           | `/readyz` 的 `?token=` 门槛（Secret），见 [3.2](#32-readyz) |
 | SESSION_SIGNING_KEY    | 空（随机生成一把）     | 站点凭据的签名密钥（Secret）；留空则本次进程随机生成，重启即全体失效 |
-| MAX_API_CONCURRENCY    | `128`                  | API（含探针与贴图字节）的同时处理上限                      |
+| MAX_API_CONCURRENCY    | `128`                  | 其余 `/api/*`（含贴图字节）的同时处理上限                  |
+| MAX_AUTH_CONCURRENCY   | `32`                   | 认证接口 `/api/auth/*` 的同时处理上限                      |
 | MAX_STATIC_CONCURRENCY | `64`                   | 静态页面与 `/assets/*` 的同时处理上限                      |
 | GOMEMLIMIT             | 不设（Go 自己决定）    | Go 的 GC 软上限；由 Go 运行时解析，应用不校验              |
 
-部署描述（`k8s.scoped-skin.yaml`）把非凭据项放 ConfigMap、凭据项放 Secret 并以 `secretRef` 注入：`READYZ_TOKEN`、`SESSION_SIGNING_KEY`、`ADMIN_USERNAME`、`ADMIN_PASSWORD`（模板里还留了一个本项目未启用的 `AUTH_TOKEN`）。`READYZ_TOKEN` 同时出现在 `readinessProbe` 的 `?token=` 里，改的时候两处一起改；这些凭据被读进内存后立刻从进程环境表里删掉，免得子进程继承。
+部署描述（`k8s.scoped-skin.yaml`）把非凭据项放 ConfigMap、凭据项放 Secret 并以 `secretRef` 注入：`READYZ_TOKEN`、`SESSION_SIGNING_KEY`、`ADMIN_USERNAME`、`ADMIN_PASSWORD`（模板里纯 token 认证用的 `AUTH_TOKEN` 本项目用不到，已删掉）。`READYZ_TOKEN` 同时出现在 `readinessProbe` 的 `?token=` 里，改的时候两处一起改；这些凭据被读进内存后立刻从进程环境表里删掉，免得子进程继承。
 
 ### 1.2. 首次启动
 
@@ -377,9 +378,9 @@ flowchart LR
 
 - **恒定请求时间**：无论账号存在与否、密码对错，账号验证都至少等待 1 秒（再加 0~200ms 抖动）才返回，用来抹掉「不存在的账号秒回」这个时序侧信道，也顺带把单客户端的请求频率压到 60 次/分钟以下；
 - **Argon2id 并发上限**：同时进行的校验最多 4 个（`app.ArgonConcurrency`）。每次校验要吃 19 MiB，不限并发即等于放弃内存上限（实测 30 并发会把常驻内存从 18 MiB 抬到 513 MiB）；
-- **请求并发上限**：两半各一个独立的闸门，各用一份槽位、互不排队（超出的在闸门外等，客户端断开即直接放行）。API 那一半（`/api/*` 与探针）吃 `MAX_API_CONCURRENCY`（默认 `128`），避免 goroutine / SQLite / Argon2 同时被放开；静态那一半（页面与 `/assets/*`）吃 `MAX_STATIC_CONCURRENCY`（默认 `64`），只防止一次页面加载把内嵌文件同时读爆；
-- **安全响应头**：所有响应都带 `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Frame-Options: DENY`。CSP 暂不引入（前端的模板在构建期编译，不再需要 `unsafe-eval`）；
-- **频率上限**：应用侧不做限流，由反向代理承担 —— 站点登录建议 `5r/m`，上传与 `authenticate` 建议 `30r/m`，并配 `limit_conn`；应用自身只保证上面那两个并发上限。
+- **请求并发上限**：按路由组各一个独立闸门，各用一份槽位、互不排队（超出的在闸门外等，客户端断开即直接放行）。`/api/auth/*` 吃 `MAX_AUTH_CONCURRENCY`（默认 `32`）—— 认证被打满不该把业务请求挤在后面；其余 `/api/*`（含贴图字节）吃 `MAX_API_CONCURRENCY`（默认 `128`），避免 goroutine / SQLite / Argon2 同时被放开；静态那一半（页面与 `/assets/*`）吃 `MAX_STATIC_CONCURRENCY`（默认 `64`），只防止一次页面加载把内嵌文件同时读爆；`/readyz` 固定 4 个槽位（它要碰库与文件，且只该由本机监控调用）；`/livez` 不设闸门 —— 只要进程还活着就必须能回 `200`；
+- **安全响应头**：所有响应都带 `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Frame-Options: DENY` 与 `Content-Security-Policy`：`default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'` —— 入口 HTML 只有构建期产出的外部 module 脚本（没有内联脚本），贴图预览要用 `blob:` 交给 `<img>`，所以只放行 `'self'` 再加 `data:` / `blob:`；
+- **频率上限**：应用侧不做限流，由反向代理承担 —— 站点登录建议 `5r/m`，上传与 `authenticate` 建议 `30r/m`，并配 `limit_conn`；应用自身只保证上面那几个并发上限。
 
 ### 5.4. 审计记录
 
@@ -406,7 +407,7 @@ flowchart LR
 
 | 凭据                    | 形态                                                                                                               | 生命周期                   | 失效方式                                                                                                                |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| 站点凭据                | `base64url(exp\|uuid\|nonce) + "." + base64url(HMAC-SHA256(SESSION_SIGNING_KEY, "v1\|" + 载荷))`，载荷是 `exp\|uuid\|nonce`（nonce 16 字节，[3.6](#36-api)） | 30 天，到点即失效 | 轮换 `SESSION_SIGNING_KEY`（全员下线）；删号后凭据未过期但账号已不在库里，仍然 401；改凭据不影响已签发的凭据 |
+| 站点凭据                | `base64url(uuid\|exp\|nonce) + "." + base64url(HMAC-SHA256(SESSION_SIGNING_KEY, "v1\|" + 载荷))`，载荷是 `uuid\|exp\|nonce`（nonce 16 字节，[3.6](#36-api)） | 30 天，到点即失效 | 轮换 `SESSION_SIGNING_KEY`（全员下线）；删号后凭据未过期但账号已不在库里，仍然 401；改凭据不影响已签发的凭据 |
 | Yggdrasil `accessToken` | 随机 32 位无横线 hex（[3.5](#35-apiyggdrasil)）                                                                    | 30 天；进程重启即全部失效  | `invalidate`（单个）、`signout`（该账号全部）、`refresh`（被轮换的那个）、改动账号、同账号超过 8 个令牌时最旧的先被顶掉 |
 
 - **口令**：库中只保存 Argon2id 哈希（默认 `m=19456, t=2, p=1`）；失败一律「用户名或密码不正确」，不暴露账号是否存在。

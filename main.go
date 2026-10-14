@@ -40,14 +40,19 @@ func initLogger() {
 	})))
 }
 
-// concurrencyLimits 是两个独立闸门的槽位数：API 那一半（含探针与贴图字节）与静态那一半。
+// concurrencyLimits 是三个独立闸门的槽位数：认证那一半、其余 API、静态文件。
 type concurrencyLimits struct {
+	auth   int
 	api    int
 	static int
 }
 
-// readConcurrencyLimits 读两个槽位数，没设就用默认值。
+// readConcurrencyLimits 读三个槽位数，没设就用默认值。
 func readConcurrencyLimits() (concurrencyLimits, error) {
+	authLimit, err := readLimit("MAX_AUTH_CONCURRENCY", api.DefaultAuthConcurrency)
+	if err != nil {
+		return concurrencyLimits{}, err
+	}
 	apiLimit, err := readLimit("MAX_API_CONCURRENCY", api.DefaultAPIConcurrency)
 	if err != nil {
 		return concurrencyLimits{}, err
@@ -56,7 +61,7 @@ func readConcurrencyLimits() (concurrencyLimits, error) {
 	if err != nil {
 		return concurrencyLimits{}, err
 	}
-	return concurrencyLimits{api: apiLimit, static: staticLimit}, nil
+	return concurrencyLimits{auth: authLimit, api: apiLimit, static: staticLimit}, nil
 }
 
 // readLimit 读一个并发上限：没设就用默认值，设了就必须是 >= 1 的整数 —— 写错了直接起不来，
@@ -168,20 +173,20 @@ func checkTimezone() error {
 }
 
 // newRootHandler 把两半接起来：站点外壳（web.go）管页面与静态资源，api 包管接口、
-// 探针与贴图字节；两半各套一层并发闸门、各用一份槽位，外面再套共用的那几层中间件
+// 探针与贴图字节；接口按路由组各套一层独立闸门，外面再套共用的那几层中间件
 // （访问日志、安全头、语言协商、体积上限），站点外壳因此和接口一样有安全头与访问日志。
 //
 // files 就是站点外壳要发的构建产物：正常启动传内嵌的 site，测试传内存文件系统。
 func newRootHandler(instance *app.App, files fs.FS, limits concurrencyLimits) http.Handler {
-	apiHandler := api.Concurrency(limits.api, api.NewMux(instance))
-	siteShell := api.Concurrency(limits.static, siteHandler(files))
+	routes := api.NewMux(instance)
 	root := http.NewServeMux()
-	// api 包认领的前缀：新增的接口如果不落在这些前缀下，得在这里补一条，
-	// 否则请求会落到站点外壳上变成 404。
-	for _, prefix := range []string{"/api/", "/livez", "/readyz"} {
-		root.Handle(prefix, apiHandler)
-	}
-	root.Handle("/", siteShell)
+	// 认证单独一组：它被打满不该把业务请求挤在后面；/readyz 自己一组、只给几个槽位；
+	// /livez 不设闸门 —— 只要进程活着就必须能回 200。新增的接口只要落在 /api/ 下就自动被认领。
+	root.Handle("/api/auth/", api.Concurrency(limits.auth, routes))
+	root.Handle("/api/", api.Concurrency(limits.api, routes))
+	root.Handle("/readyz", api.Concurrency(api.ReadyzConcurrency, routes))
+	root.Handle("/livez", routes)
+	root.Handle("/", api.Concurrency(limits.static, siteHandler(files)))
 	return api.Middleware(instance, root)
 }
 

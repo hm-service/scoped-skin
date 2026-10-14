@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"sort"
 
@@ -23,11 +24,11 @@ func (s *Server) adminSnapshot(requesting *db.User) (map[string]any, error) {
 	return map[string]any{"users": list, "me": requesting.UUID}, nil
 }
 
-// writeUserError 把业务层的字段校验错误翻成 HTTP：撞唯一约束 → 409，其余 → 400，
-// detail 按请求语言渲染（前端直接展示）。
+// writeUserError 把业务层的字段校验错误翻成 HTTP：只有结合当前数据状态才成立的拒绝 → 409，
+// 单看请求体就能判定的字段问题 → 400，detail 按请求语言渲染（前端直接展示）。
 func writeUserError(w http.ResponseWriter, r *http.Request, err error) {
 	status := http.StatusBadRequest
-	if isConflict(err) {
+	if isStateConflict(err) {
 		status = http.StatusConflict
 	}
 	if text := businessMessage(r, err); text != "" {
@@ -35,6 +36,16 @@ func writeUserError(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	fail(w, r, http.StatusInternalServerError, "store.user-write")
+}
+
+// isStateConflict 判断错误是不是只有对照当前数据状态才不合法：撞唯一约束、把最后一个
+// 管理员降级都算（回 409）；纯字段格式问题回 400。
+func isStateConflict(err error) bool {
+	if isConflict(err) {
+		return true
+	}
+	invalid, ok := errors.AsType[*core.ValidationError](err)
+	return ok && invalid.Key == "valid.last-admin"
 }
 
 // handleListUsers 是维护页的数据源：整份用户列表（不含密码哈希）。
@@ -201,7 +212,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if status == "last_admin" {
-		fail(w, r, http.StatusBadRequest, "user.last-admin")
+		fail(w, r, http.StatusConflict, "user.last-admin")
 		return
 	}
 	if err := s.App.ResetSessions(); err != nil {

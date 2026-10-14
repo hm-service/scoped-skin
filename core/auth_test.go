@@ -67,7 +67,7 @@ func TestSleepUntilPadsSlowAndFastPaths(t *testing.T) {
 	}
 }
 
-// 站点凭据 = base64url(exp|uuid|nonce) + "." + base64url(HMAC-SHA256(key, "v1|" + 载荷))。
+// 站点凭据 = base64url(uuid|exp|nonce) + "." + base64url(HMAC-SHA256(key, "v1|" + 载荷))。
 func TestSiteTokenRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -90,11 +90,11 @@ func TestSiteTokenRoundTrip(t *testing.T) {
 		t.Fatalf("载荷不是 base64url: %v", err)
 	}
 	fields := strings.Split(string(raw), "|")
-	if len(fields) != 3 || fields[1] != "uuid-steve" {
-		t.Fatalf("载荷 = %q，想要 exp|uuid|nonce", raw)
+	if len(fields) != 3 || fields[0] != "uuid-steve" {
+		t.Fatalf("载荷 = %q，想要 uuid|exp|nonce", raw)
 	}
-	if want := fmt.Sprint(now.Add(core.SessionTokenTTL).Unix()); fields[0] != want {
-		t.Fatalf("过期时间 = %q，想要 %q（30 天后）", fields[0], want)
+	if want := fmt.Sprint(now.Add(core.SessionTokenTTL).Unix()); fields[1] != want {
+		t.Fatalf("过期时间 = %q，想要 %q（30 天后）", fields[1], want)
 	}
 	nonce, err := base64.RawURLEncoding.DecodeString(fields[2])
 	if err != nil || len(nonce) != core.SessionNonceSize {

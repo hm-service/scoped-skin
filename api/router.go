@@ -17,6 +17,25 @@ type Server struct {
 	App *app.App
 }
 
+// Limits 是三个并发闸门的槽位数：认证单独一组、其余 API 一组、静态文件一组。
+type Limits struct {
+	Auth   int
+	API    int
+	Static int
+}
+
+// 默认槽位数：认证那一半压得比业务低一档（每次校验吃 19 MiB 的 Argon2id），
+// 静态那一半只防止一次页面加载把内嵌文件同时读爆。
+const (
+	DefaultAuthConcurrency   = 32
+	DefaultAPIConcurrency    = 128
+	DefaultStaticConcurrency = 64
+)
+
+// ReadyzConcurrency 是 /readyz 的槽位数：它要碰库与文件，且只该由本机监控调用，
+// 并发预期很低，固定几个就够。
+const ReadyzConcurrency = 4
+
 // NewHandler 是只含接口的完整处理器：中间件 + NewMux，供只关心接口的调用方使用
 // （测试、或者将来换一个站点外壳）。页面与静态资源不在这里，所以并发闸门只套 API 那一层，
 // 用默认槽位数；main.go 那棵树会按环境变量给两半各套一层。

@@ -29,18 +29,10 @@ func (rec *statusRecorder) Write(body []byte) (int, error) {
 	return rec.ResponseWriter.Write(body)
 }
 
-// 两半各有一个独立闸门，槽位数可被环境变量覆盖：
-// API 那一半管住 goroutine / SQLite / Argon2，静态那一半只防止一次页面加载把内嵌文件
-// 同时读爆 —— 两边各占各自的槽位，谁也不排谁的队。
-const (
-	DefaultAPIConcurrency    = 128
-	DefaultStaticConcurrency = 64
-)
-
 // Concurrency 用一个固定容量的信号量把同时在处理的请求卡在 limit 以内。
 // 排队的请求在客户端断开后直接放行，不再占用槽位。
 //
-// 这里不认路径：套在谁身上就卡谁。API 与静态各套一层、各用一份槽位，接线在 main.go
+// 这里不认路径：套在谁身上就卡谁。认证、业务、静态各套一层、各用一份槽位，接线在 main.go
 // （NewHandler 只服务接口，所以自己套 API 那一层默认值）。
 func Concurrency(limit int, next http.Handler) http.Handler {
 	slots := make(chan struct{}, limit)
@@ -55,14 +47,23 @@ func Concurrency(limit int, next http.Handler) http.Handler {
 	})
 }
 
-// SecurityHeaders 给所有响应补上三个静态安全头：nosniff 挡 MIME 嗅探，
-// no-referrer 不外泄地址，DENY 禁止被 iframe 嵌套。CSP 暂不引入。
+// 内容安全策略：只放行本站自己发出去的资源。
+// 页面里的脚本全是构建期产出的外部文件（入口 HTML 没有内联脚本），所以 script-src 只认 'self'；
+// 样式上运行时会出现内联样式，故保留 'unsafe-inline' 这一档；
+// 贴图预览要把用户选的本地文件用 blob: 交给 <img>，img-src 因此还得认 data: 与 blob:；
+// 其余全部收紧到 'none'，再把 base-uri / form-action / frame-ancestors 一并钉死，
+// 免得注入进来的标签改写基地址、把表单指向外部或把页面嵌进别人的 iframe。
+const ContentSecurityPolicy = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';"
+
+// SecurityHeaders 给所有响应补上四个静态安全头：nosniff 挡 MIME 嗅探，no-referrer 不外泄地址，
+// DENY 禁止被 iframe 嵌套，CSP 则把页面允许加载的东西限定在本站自己发出去的资源上。
 func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header := w.Header()
 		header.Set("X-Content-Type-Options", "nosniff")
 		header.Set("Referrer-Policy", "no-referrer")
 		header.Set("X-Frame-Options", "DENY")
+		header.Set("Content-Security-Policy", ContentSecurityPolicy)
 		next.ServeHTTP(w, r)
 	})
 }

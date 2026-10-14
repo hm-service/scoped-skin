@@ -157,13 +157,17 @@ func TestSiteMissingPageIsServerError(t *testing.T) {
 
 // defaultLimits 是正常启动时的槽位数；要验闸门本身时才另外造一份。
 func defaultLimits() concurrencyLimits {
-	return concurrencyLimits{api: api.DefaultAPIConcurrency, static: api.DefaultStaticConcurrency}
+	return concurrencyLimits{
+		auth:   api.DefaultAuthConcurrency,
+		api:    api.DefaultAPIConcurrency,
+		static: api.DefaultStaticConcurrency,
+	}
 }
 
-// 两半各用一份槽位：静态那半给 0 个槽位时，页面会一直排队，而 API 那半照常放行。
-func TestRootHandlerGivesEachHalfItsOwnGate(t *testing.T) {
+// 静态那半给 0 个槽位时页面一直排队，其余路由组各有各的槽位、照常应答。
+func TestRootHandlerGivesEachRouteGroupItsOwnGate(t *testing.T) {
 	instance := testenv.New(t)
-	handler := newRootHandler(instance, testSite(), concurrencyLimits{api: 1, static: 0})
+	handler := newRootHandler(instance, testSite(), concurrencyLimits{auth: 1, api: 1, static: 0})
 
 	page := make(chan struct{})
 	go func() {
@@ -176,8 +180,40 @@ func TestRootHandlerGivesEachHalfItsOwnGate(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 
-	if recorder := testenv.Do(handler, http.MethodGet, "/livez", nil, ""); recorder.Code != http.StatusOK {
-		t.Fatalf("/livez = %d，想要 200（API 那半有自己的槽位）", recorder.Code)
+	for name, item := range map[string]struct {
+		target string
+		want   int
+	}{
+		"存活探针不设闸门":   {"/livez", http.StatusOK},
+		"就绪探针有自己的槽位": {"/readyz", http.StatusOK},
+		"认证那半有自己的槽位": {"/api/auth/session", http.StatusUnauthorized},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if recorder := testenv.Do(handler, http.MethodGet, item.target, nil, ""); recorder.Code != item.want {
+				t.Fatalf("%s = %d，想要 %d", item.target, recorder.Code, item.want)
+			}
+		})
+	}
+}
+
+// 认证与业务各一组：业务那半给 0 个槽位时它一直排队，认证那半照常应答。
+func TestRootHandlerKeepsAuthGateSeparate(t *testing.T) {
+	instance := testenv.New(t)
+	handler := newRootHandler(instance, testSite(), concurrencyLimits{auth: 1, api: 0, static: 1})
+
+	blocked := make(chan struct{})
+	go func() {
+		defer close(blocked)
+		testenv.Do(handler, http.MethodGet, "/api/library", nil, "")
+	}()
+	select {
+	case <-blocked:
+		t.Fatal("业务那半是 0 个槽位，却把请求放过去了")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	if recorder := testenv.Do(handler, http.MethodGet, "/api/auth/session", nil, ""); recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("/api/auth/session = %d，想要 401（认证那半不该被业务闸门挡住）", recorder.Code)
 	}
 }
 

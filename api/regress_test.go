@@ -16,7 +16,7 @@ import (
 	"scoped-skin/internal/testenv"
 )
 
-// 回归（最后一个管理员不可降级）：HTTP 层要把 core 的 valid.last-admin 翻成 400，
+// 回归（最后一个管理员不可降级）：HTTP 层要把 core 的 valid.last-admin 翻成 409，
 // 而且 guest 和 normal 一视同仁。修复前只挡了 normal，改成 guest 会 200。
 func TestAdminCannotDemoteLastAdminOverHTTP(t *testing.T) {
 	instance, handler := newSite(t)
@@ -27,8 +27,8 @@ func TestAdminCannotDemoteLastAdminOverHTTP(t *testing.T) {
 		t.Run(role, func(t *testing.T) {
 			recorder := testenv.Do(handler, http.MethodPatch, "/api/admin/users/"+adminUUID,
 				map[string]any{"role": role}, token)
-			if recorder.Code != http.StatusBadRequest {
-				t.Errorf("把最后一个管理员降成 %s 的状态码 = %d，想要 400（%s）",
+			if recorder.Code != http.StatusConflict {
+				t.Errorf("把最后一个管理员降成 %s 的状态码 = %d，想要 409（%s）",
 					role, recorder.Code, recorder.Body.String())
 			}
 			if got := detail(t, recorder); got != "这是最后一个管理员，不能降级" {

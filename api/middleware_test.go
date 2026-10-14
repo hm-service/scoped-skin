@@ -116,6 +116,32 @@ func TestConcurrencyCountsEveryPathItWraps(t *testing.T) {
 	}
 }
 
+// 四个静态安全头要在所有响应上都出现（JSON、探针、404 一视同仁），
+// CSP 的值与中间件旁边那条常量逐字一致 —— 策略一改就得同步改这里。
+func TestSecurityHeadersIncludeContentSecurityPolicy(t *testing.T) {
+	_, handler := newSite(t)
+
+	for _, path := range []string{"/livez", "/api/nope", "/readyz"} {
+		t.Run(path, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+			header := recorder.Header()
+			if got := header.Get("Content-Security-Policy"); got != api.ContentSecurityPolicy {
+				t.Errorf("%s: Content-Security-Policy = %q，想要 %q", path, got, api.ContentSecurityPolicy)
+			}
+			if got := header.Get("X-Content-Type-Options"); got != "nosniff" {
+				t.Errorf("%s: X-Content-Type-Options = %q", path, got)
+			}
+			if got := header.Get("Referrer-Policy"); got != "no-referrer" {
+				t.Errorf("%s: Referrer-Policy = %q", path, got)
+			}
+			if got := header.Get("X-Frame-Options"); got != "DENY" {
+				t.Errorf("%s: X-Frame-Options = %q", path, got)
+			}
+		})
+	}
+}
+
 // 访问日志不记纯静态与存活探针（噪音），但接口照记。页面走的是同一层中间件，
 // 只是由站点外壳那边测（根目录 web_test.go）。
 func TestAccessLogSkipsStaticAndLivez(t *testing.T) {

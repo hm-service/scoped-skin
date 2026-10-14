@@ -216,19 +216,22 @@ func TestCheckTimezone(t *testing.T) {
 	}
 }
 
-// 两个槽位数都可以用环境变量覆盖；没设用默认值，
+// 三个槽位数都可以用环境变量覆盖；没设用默认值，
 // 设了但写错直接失败 —— 信号量容量为 0 会让服务永久排队，宁可在启动时就报错。
 func TestReadConcurrencyLimits(t *testing.T) {
 	cases := []struct {
 		name    string
+		auth    string
 		api     string
 		static  string
 		want    concurrencyLimits
 		wantErr bool
 	}{
-		{name: "都没设用默认值", want: concurrencyLimits{api: 128, static: 64}},
-		{name: "都设了", api: "256", static: "8", want: concurrencyLimits{api: 256, static: 8}},
-		{name: "只设了一个", api: "1", want: concurrencyLimits{api: 1, static: 64}},
+		{name: "都没设用默认值", want: concurrencyLimits{auth: 32, api: 128, static: 64}},
+		{name: "都设了", auth: "4", api: "256", static: "8", want: concurrencyLimits{auth: 4, api: 256, static: 8}},
+		{name: "只设了一个", api: "1", want: concurrencyLimits{auth: 32, api: 1, static: 64}},
+		{name: "认证不是数字", auth: "many", wantErr: true},
+		{name: "认证是 0", auth: "0", wantErr: true},
 		{name: "API 不是数字", api: "many", wantErr: true},
 		{name: "API 是 0", api: "0", wantErr: true},
 		{name: "API 是负数", api: "-3", wantErr: true},
@@ -238,6 +241,7 @@ func TestReadConcurrencyLimits(t *testing.T) {
 
 	for _, item := range cases {
 		t.Run(item.name, func(t *testing.T) {
+			t.Setenv("MAX_AUTH_CONCURRENCY", item.auth)
 			t.Setenv("MAX_API_CONCURRENCY", item.api)
 			t.Setenv("MAX_STATIC_CONCURRENCY", item.static)
 
