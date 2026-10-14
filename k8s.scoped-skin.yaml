@@ -85,6 +85,7 @@ spec:
               periodSeconds: 30
               timeoutSeconds: 3
               failureThreshold: 3
+
           readinessProbe:
               httpGet:
                   path: /readyz?token=your_readyz_token
@@ -97,6 +98,7 @@ spec:
           volumeMounts:
               - name: data
                 mountPath: /data
+
     volumes:
         - name: data
           persistentVolumeClaim:
