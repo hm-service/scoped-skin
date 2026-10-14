@@ -78,7 +78,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeUserError(w, r, err)
 		return
 	}
-	if err := s.App.RefreshTokens(); err != nil {
+	if err := s.App.ResetSessions(); err != nil {
 		fail(w, r, http.StatusInternalServerError, "store.token")
 		return
 	}
@@ -102,7 +102,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 // handleUpdateUser 改指定账号的 uuid / 账号名 / 密码 / 游戏内名称 / 身份组。
 //
 // 请求体里只有出现过的字段才算改动（指针为 nil 就是没出现）；改完按 uuid 作废
-// 该账号的 Yggdrasil 内存会话，站点旧 token 也在 RefreshTokens 里一并失效。
+// 该账号的 Yggdrasil 内存会话；站点凭据是无状态的，改凭据不会让它立刻失效。
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	admin := s.currentAdmin(w, r)
 	if admin == nil {
@@ -149,7 +149,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, http.StatusNotFound, "user.unknown")
 		return
 	}
-	if err := s.App.RefreshTokens(target); err != nil {
+	if err := s.App.ResetSessions(target); err != nil {
 		fail(w, r, http.StatusInternalServerError, "store.token")
 		return
 	}
@@ -204,7 +204,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, http.StatusBadRequest, "user.last-admin")
 		return
 	}
-	if err := s.App.RefreshTokens(); err != nil {
+	if err := s.App.ResetSessions(); err != nil {
 		fail(w, r, http.StatusInternalServerError, "store.token")
 		return
 	}

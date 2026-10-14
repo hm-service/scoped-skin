@@ -1,6 +1,7 @@
 package core
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
 	"sync"
 	"time"
@@ -39,6 +40,14 @@ type Sessions struct {
 
 func NewSessions() *Sessions {
 	return &Sessions{byToken: make(map[string]sessionEntry), byUser: make(map[string][]string)}
+}
+
+// tokenDigest 把任意长度的令牌折成定长摘要，供查找与恒时比较共用。
+func tokenDigest(token string) [32]byte { return sha256.Sum256([]byte(token)) }
+
+func tokenKey(token string) string {
+	digest := tokenDigest(token)
+	return string(digest[:])
 }
 
 // Create 颁发新令牌。没给 clientToken 就随机生成一个（规范要求无符号 UUID 形状）。

@@ -445,3 +445,27 @@ func TestReadyzTokenGate(t *testing.T) {
 		})
 	}
 }
+
+// 站点凭据是无状态的：删号之后凭据本身还验得过，但库里的账号没了 ——
+// 必须停在 401，不能因为「签名有效」就当登录态放行。
+func TestDeletedUserCredentialIsRejected(t *testing.T) {
+	instance := testenv.New(t)
+	handler := api.NewHandler(instance)
+	token := testenv.Token(t, instance, "steve")
+
+	if recorder := testenv.Do(handler, http.MethodGet, "/api/auth/session", nil, token); recorder.Code != http.StatusOK {
+		t.Fatalf("删号前凭据就该有效: %d", recorder.Code)
+	}
+	adminToken := testenv.Token(t, instance, "admin")
+	playerUUID := core.OfflineUUID("steve")
+	if recorder := testenv.Do(handler, http.MethodDelete, "/api/admin/users/"+playerUUID, nil, adminToken); recorder.Code != http.StatusOK {
+		t.Fatalf("删号失败: %d %s", recorder.Code, recorder.Body.String())
+	}
+	recorder := testenv.Do(handler, http.MethodGet, "/api/auth/session", nil, token)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("删号之后凭据状态码 = %d，想要 401", recorder.Code)
+	}
+	if got := detail(t, recorder); got != "登录状态无效，请重新登录" {
+		t.Errorf("删号之后 detail = %q，想要 %q", got, "登录状态无效，请重新登录")
+	}
+}

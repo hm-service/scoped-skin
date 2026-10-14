@@ -101,7 +101,7 @@ func TestReadHost(t *testing.T) {
 	}
 }
 
-// 探针 token 留空表示不设门槛，设了就必须是 16-128 位的小写字母 / 数字 / 下划线。
+// 探针 token 留空表示不设门槛，设了就必须是 16-128 位的字母 / 数字 / 下划线。
 func TestReadReadyzToken(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -111,9 +111,9 @@ func TestReadReadyzToken(t *testing.T) {
 		{name: "留空不校验"},
 		{name: "正常 token", token: "your_readyz_token"},
 		{name: "16 位下界", token: "0123456789abcdef"},
+		{name: "含大写", token: "Your_readyz_token"},
 		{name: "太短", token: "short_token", wantErr: true},
 		{name: "太长", token: strings.Repeat("a", 129), wantErr: true},
-		{name: "含大写", token: "Your_readyz_token", wantErr: true},
 		{name: "含连字符", token: "your-readyz-token", wantErr: true},
 		{name: "含空格", token: "your readyz token", wantErr: true},
 	}
@@ -135,7 +135,59 @@ func TestReadReadyzToken(t *testing.T) {
 			if got != item.token {
 				t.Errorf("readReadyzToken() = %q，想要 %q", got, item.token)
 			}
+			if left := os.Getenv("READYZ_TOKEN"); left != "" {
+				t.Errorf("读完之后不该还留在环境表里: %q", left)
+			}
 		})
+	}
+}
+
+// 签名密钥 32-128 位，留空表示本次进程随机生成一把。
+func TestReadSessionSigningKey(t *testing.T) {
+	cases := []struct {
+		name    string
+		key     string
+		wantErr bool
+	}{
+		{name: "留空表示随机生成"},
+		{name: "32 位下界", key: strings.Repeat("a", 32)},
+		{name: "太长", key: strings.Repeat("a", 129), wantErr: true},
+		{name: "含连字符", key: "someone-very-safe-signing-key-32", wantErr: true},
+	}
+
+	for _, item := range cases {
+		t.Run(item.name, func(t *testing.T) {
+			t.Setenv("SESSION_SIGNING_KEY", item.key)
+
+			got, err := readSessionSigningKey()
+			if item.wantErr {
+				if err == nil {
+					t.Fatalf("readSessionSigningKey() = %q，想要报错", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("readSessionSigningKey() 报错: %v", err)
+			}
+			if got != item.key {
+				t.Errorf("readSessionSigningKey() = %q，想要 %q", got, item.key)
+			}
+			if left := os.Getenv("SESSION_SIGNING_KEY"); left != "" {
+				t.Errorf("读完之后不该还留在环境表里: %q", left)
+			}
+		})
+	}
+}
+
+// 管理员密码读完同样从环境表里删掉。
+func TestReadAdminPasswordUnsetEnv(t *testing.T) {
+	t.Setenv("ADMIN_PASSWORD", "verify_pass_123")
+
+	if got := readAdminPassword(); got != "verify_pass_123" {
+		t.Errorf("readAdminPassword() = %q", got)
+	}
+	if left := os.Getenv("ADMIN_PASSWORD"); left != "" {
+		t.Errorf("读完之后不该还留在环境表里: %q", left)
 	}
 }
 

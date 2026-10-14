@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
-	"scoped-skin/core"
 	"scoped-skin/db"
 	"scoped-skin/httpx"
 )
@@ -44,15 +44,15 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 
 // currentUser 把 `Authorization: Bearer <token>` 换成库里的 user 行。
 //
-// 头缺失 / 不是 Bearer / 没有 token → 401「未登录」；token 不认识，或认识的
-// token 对应的账号已经不在库里 → 401「登录状态无效，请重新登录」。
+// 头缺失 / 不是 Bearer / 没有 token → 401「未登录」；凭据验签或过期不过，
+// 或凭据里的账号已经不在库里 → 401「登录状态无效，请重新登录」。
 func (s *Server) currentUser(w http.ResponseWriter, r *http.Request) *db.User {
 	scheme, token, found := strings.Cut(r.Header.Get("Authorization"), " ")
 	if !found || !strings.EqualFold(scheme, "bearer") || token == "" {
 		unauthorized(w, r, "auth.required")
 		return nil
 	}
-	user := s.App.Store.User(s.App.Tokens.Resolve(strings.TrimSpace(token)))
+	user := s.App.Store.User(s.App.Tokens.Verify(strings.TrimSpace(token), time.Now()))
 	if user == nil {
 		unauthorized(w, r, "auth.stale")
 		return nil
@@ -117,9 +117,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		"uuid":     user.UUID,
 	})
 
-	token := s.App.Tokens.Register(core.Credential{
-		UUID: user.UUID, Username: user.Username, PasswordHash: user.PasswordHash,
-	})
+	token, err := s.App.Tokens.Issue(user.UUID, time.Now())
+	if err != nil {
+		fail(w, r, http.StatusInternalServerError, "session.issue")
+		return
+	}
 	httpx.Write(w, http.StatusOK, map[string]any{
 		"token":  token,
 		"player": publicUser(user),

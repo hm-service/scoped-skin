@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"testing"
@@ -66,107 +67,123 @@ func TestSleepUntilPadsSlowAndFastPaths(t *testing.T) {
 	}
 }
 
-// 站点 token = HMAC-SHA256(进程密钥, uuid + "\x1f" + username + "\x1f" + password_hash)。
-// 同一个进程里稳定；换一次启动（换密钥）就整批不一样 —— 库泄露也推不出 token。
-func TestTokenIsStableWithinProcessAndBoundToSecret(t *testing.T) {
+// 站点凭据 = base64url(exp|uuid|nonce) + "." + base64url(HMAC-SHA256(key, "v1|" + 载荷))。
+func TestSiteTokenRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	store, err := core.NewTokenStore()
+	now := time.Unix(1_700_000_000, 0)
+	tokens := core.NewSiteTokens([]byte("key-a"))
+	first, err := tokens.Issue("uuid-steve", now)
 	if err != nil {
-		t.Fatalf("NewTokenStore: %v", err)
+		t.Fatalf("Issue: %v", err)
 	}
-	steve := core.Credential{UUID: "uuid-1", Username: "steve", PasswordHash: "$argon2id$..."}
-	first := store.TokenFor(steve)
-	if len(first) != 64 {
-		t.Fatalf("token 应当是 64 位 hex: %q", first)
-	}
-	if first != store.TokenFor(steve) {
-		t.Fatalf("同一进程里同样的输入要算出同样的 token")
-	}
-	// 分隔符要挡得住「字段内容里塞分隔符」这种拼接歧义
-	for index, changed := range []core.Credential{
-		{UUID: "uuid-2", Username: "steve", PasswordHash: "$argon2id$..."},
-		{UUID: "uuid-1", Username: "alex", PasswordHash: "$argon2id$..."},
-		{UUID: "uuid-1", Username: "steve", PasswordHash: "$argon2id$..!"},
-	} {
-		t.Run(fmt.Sprintf("%d_%s_%s", index, changed.UUID, changed.Username), func(t *testing.T) {
-			if store.TokenFor(changed) == first {
-				t.Fatalf("改一个字段就该换一个 token: %+v", changed)
-			}
-		})
+	if got := tokens.Verify(first, now); got != "uuid-steve" {
+		t.Fatalf("Verify(刚签发) = %q，想要 uuid-steve", got)
 	}
 
-	restarted, err := core.NewTokenStore()
-	if err != nil {
-		t.Fatalf("NewTokenStore: %v", err)
+	payload, signature, found := strings.Cut(first, ".")
+	if !found || payload == "" || signature == "" {
+		t.Fatalf("凭据形状应当是 载荷.签名: %q", first)
 	}
-	if restarted.TokenFor(steve) == first {
-		t.Fatalf("换一次启动就该换一批 token")
+	raw, err := base64.RawURLEncoding.DecodeString(payload)
+	if err != nil {
+		t.Fatalf("载荷不是 base64url: %v", err)
+	}
+	fields := strings.Split(string(raw), "|")
+	if len(fields) != 3 || fields[1] != "uuid-steve" {
+		t.Fatalf("载荷 = %q，想要 exp|uuid|nonce", raw)
+	}
+	if want := fmt.Sprint(now.Add(core.SessionTokenTTL).Unix()); fields[0] != want {
+		t.Fatalf("过期时间 = %q，想要 %q（30 天后）", fields[0], want)
+	}
+	nonce, err := base64.RawURLEncoding.DecodeString(fields[2])
+	if err != nil || len(nonce) != core.SessionNonceSize {
+		t.Fatalf("nonce 应当是 %d 字节的 base64url: %v", core.SessionNonceSize, err)
+	}
+
+	second, err := tokens.Issue("uuid-steve", now)
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	if second == first {
+		t.Fatalf("两次签发不能重复")
 	}
 }
 
-func TestTokenStoreRebuildDropsChangedCredentials(t *testing.T) {
+// 先验签、再看过期：形状不对、签名对不上、载荷被动过，一律解析成空。
+func TestSiteTokenRejectsTampered(t *testing.T) {
 	t.Parallel()
 
-	store, err := core.NewTokenStore()
+	now := time.Unix(1_700_000_000, 0)
+	tokens := core.NewSiteTokens([]byte("key-a"))
+	token, err := tokens.Issue("uuid-steve", now)
 	if err != nil {
-		t.Fatalf("NewTokenStore: %v", err)
+		t.Fatalf("Issue: %v", err)
 	}
-	steve := core.Credential{UUID: "uuid-steve", Username: "steve", PasswordHash: "hash-steve"}
-	alex := core.Credential{UUID: "uuid-alex", Username: "alex", PasswordHash: "hash-alex"}
-	steveToken := store.Register(steve)
-	alexToken := store.Register(alex)
-
-	if resolved := store.Resolve(steveToken); resolved != "uuid-steve" {
-		t.Fatalf("token 换 uuid 失败: %q", resolved)
-	}
-	if store.Resolve("不认识") != "" || store.Resolve("") != "" {
-		t.Fatalf("未知 token 应当解析成空")
-	}
-
-	// 改了 steve 的密码：他旧 token 失效，alex 的照旧
-	store.Rebuild([]core.Credential{
-		{UUID: "uuid-steve", Username: "steve", PasswordHash: "hash-steve-v2"},
-		alex,
-	})
-	if store.Resolve(steveToken) != "" {
-		t.Fatalf("改过凭据的账号旧 token 应当失效")
-	}
-	if store.Resolve(alexToken) != "uuid-alex" {
-		t.Fatalf("没改动的账号 token 不应当受影响")
-	}
-}
-
-// token 查找走定长摘要：同长度、只差最后一位的近似 token 也要被拒。
-func TestTokenResolveRejectsLookalike(t *testing.T) {
-	t.Parallel()
-
-	store, err := core.NewTokenStore()
+	payload, signature, _ := strings.Cut(token, ".")
+	other, err := core.NewSiteTokens([]byte("key-b")).Issue("uuid-steve", now)
 	if err != nil {
-		t.Fatalf("NewTokenStore: %v", err)
+		t.Fatalf("Issue: %v", err)
 	}
-	credential := core.Credential{UUID: "uuid-steve", Username: "steve", PasswordHash: "hash-steve"}
-	token := store.Register(credential)
-	if got := store.Resolve(token); got != credential.UUID {
-		t.Fatalf("Resolve(正确 token) = %q，想要 %q", got, credential.UUID)
-	}
-
-	lookalike := token[:len(token)-1]
-	if token[len(token)-1] == '0' {
-		lookalike += "1"
-	} else {
-		lookalike += "0"
+	flipped := "A" + signature[1:]
+	if signature[0] == 'A' {
+		flipped = "B" + signature[1:]
 	}
 	for name, candidate := range map[string]string{
-		"同长度近似": lookalike,
-		"截短":    token[:len(token)-1],
-		"加长":    token + "0",
+		"空串":             "",
+		"没有签名":           payload,
+		"签名被改":           payload + "." + flipped,
+		"换成别人的凭据":        other,
+		"载荷加料":           payload + "A." + signature,
+		"签名不是 base64url": payload + ".!!!",
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got := store.Resolve(candidate); got != "" {
-				t.Errorf("Resolve(%s) = %q，想要空", name, got)
+			if got := tokens.Verify(candidate, now); got != "" {
+				t.Errorf("Verify(%s) = %q，想要空", name, got)
 			}
 		})
+	}
+}
+
+func TestSiteTokenExpiryAndSigningKey(t *testing.T) {
+	t.Parallel()
+
+	now := time.Unix(1_700_000_000, 0)
+	tokens := core.NewSiteTokens([]byte("key-a"))
+	token, err := tokens.Issue("uuid-steve", now)
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	if got := tokens.Verify(token, now.Add(core.SessionTokenTTL-time.Second)); got != "uuid-steve" {
+		t.Fatalf("过期前应当有效，得到 %q", got)
+	}
+	if got := tokens.Verify(token, now.Add(core.SessionTokenTTL)); got != "" {
+		t.Fatalf("到点就应当失效，得到 %q", got)
+	}
+	// 同一把密钥（部署方填的 SESSION_SIGNING_KEY）在另一个实例里照样认这张凭据
+	if got := core.NewSiteTokens([]byte("key-a")).Verify(token, now); got != "uuid-steve" {
+		t.Fatalf("同一把密钥应当互相认账，得到 %q", got)
+	}
+	// 凭据是无状态的：轮换 SESSION_SIGNING_KEY 是唯一能把所有人下线的手段
+	if got := core.NewSiteTokens([]byte("key-b")).Verify(token, now); got != "" {
+		t.Fatalf("换一把密钥之后旧凭据必须失效，得到 %q", got)
+	}
+}
+
+// 最短校验时间是 1 秒再加 0~200ms 抖动：固定值本身也是一种可观测的指纹。
+func TestLoginFloorIsJittered(t *testing.T) {
+	t.Parallel()
+
+	seen := make(map[time.Duration]bool)
+	for range 64 {
+		floor := core.LoginFloor()
+		if floor < core.LoginMinSeconds || floor > core.LoginMinSeconds+200*time.Millisecond {
+			t.Fatalf("LoginFloor = %v，超出 [1s, 1.2s]", floor)
+		}
+		seen[floor] = true
+	}
+	if len(seen) < 2 {
+		t.Fatalf("LoginFloor 64 次只给出 %d 个取值，抖动没生效", len(seen))
 	}
 }
 

@@ -17,7 +17,8 @@ import (
 )
 
 // 管理员动过某个账号（删号 / 改 UUID / 改凭据）时，会按 uuid 把这个账号
-// Yggdrasil 会话一并清掉。这里把「站点侧改凭据 → 启动器侧令牌失效」串起来验一遍。
+// Yggdrasil 会话一并清掉。这里把「站点侧改凭据 → 启动器侧令牌失效」串起来验一遍；
+// 站点凭据是无状态的，不在其列（改完之后仍然有效到过期）。
 func TestAdminCredentialChangeKillsYggdrasilSession(t *testing.T) {
 	instance := testenv.New(t)
 	handler := api.NewHandler(instance)
@@ -45,9 +46,9 @@ func TestAdminCredentialChangeKillsYggdrasilSession(t *testing.T) {
 		t.Fatalf("改密码失败: %d %s", recorder.Code, recorder.Body.String())
 	}
 
-	// 4. 站点旧 token 立刻失效（确定性哈希按库里的字段整表重算）
-	if recorder := testenv.Do(handler, http.MethodGet, "/api/auth/session", nil, siteToken); recorder.Code != http.StatusUnauthorized {
-		t.Fatalf("改凭据后站点旧 token 应当 401，实际 %d", recorder.Code)
+	// 4. 站点凭据是无状态的（自带过期时间、签名认 uuid）：改凭据不会让它立刻失效
+	if recorder := testenv.Do(handler, http.MethodGet, "/api/auth/session", nil, siteToken); recorder.Code != http.StatusOK {
+		t.Fatalf("站点凭据应当有效到过期，实际 %d", recorder.Code)
 	}
 	// 5. Yggdrasil 的内存会话也被清掉
 	recorder = testenv.Do(handler, http.MethodPost, "/api/yggdrasil/authserver/validate",

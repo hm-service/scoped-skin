@@ -96,7 +96,8 @@ var catalog = map[string]entry{
 	"store.users-read":   {"读取使用情况失败", "Failed to read who is wearing it"},
 	"store.user-write":   {"用户操作失败", "Account operation failed"},
 	"store.user-delete":  {"删除用户失败", "Failed to delete account"},
-	"store.token":        {"刷新令牌失败", "Failed to refresh tokens"},
+	"store.token":        {"重置 Yggdrasil 会话失败", "Failed to reset Yggdrasil sessions"},
+	"session.issue":      {"签发登录凭据失败", "Failed to issue a session credential"},
 }
 
 // Parse 从 Accept-Language 里挑一档支持的语言：按出现顺序找第一个认得出来的，

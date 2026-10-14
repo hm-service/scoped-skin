@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	randv2 "math/rand/v2"
 	"strings"
 	"time"
 
@@ -22,8 +23,16 @@ const (
 	argonSaltLen        = 16
 )
 
-// 「防爆破与加固措施」：无论账号存在与否，账号验证恒定等待至少 1 秒才完成。
-const LoginMinSeconds = time.Second
+// 账号验证的最短耗时：1 秒再加 0~200ms 的抖动 —— 固定值本身也是一种可观测的指纹。
+const (
+	LoginMinSeconds = time.Second
+	loginJitterMax  = 200 * time.Millisecond
+)
+
+// LoginFloor 给出本次校验该等多久。
+func LoginFloor() time.Duration {
+	return LoginMinSeconds + time.Duration(randv2.Int64N(int64(loginJitterMax)+1))
+}
 
 // PHC 字符串里的 base64 不带填充（与 argon2-cffi 一致）。
 var phcBase64 = base64.RawStdEncoding

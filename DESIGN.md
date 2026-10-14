@@ -19,12 +19,13 @@
 | ADMIN_USERNAME         | `admin`                | 首次启动建的**管理员账号名**（登录用；角色名固定 `admin`） |
 | ADMIN_PASSWORD         | 空（随机生成）         | 首次启动的管理员密码；留空则随机生成并打到启动日志里。     |
 | TRUSTED_PROXIES        | `127.0.0.1/32,::1/128` | 可信反向代理网段，见 [5.5](#55-源-ip-与反向代理)           |
-| READYZ_TOKEN           | 空（不校验）           | `/readyz` 的 `?token=` 门槛，见 [3.2](#32-readyz)          |
+| READYZ_TOKEN           | 空（不校验）           | `/readyz` 的 `?token=` 门槛（Secret），见 [3.2](#32-readyz) |
+| SESSION_SIGNING_KEY    | 空（随机生成一把）     | 站点凭据的签名密钥（Secret）；留空则本次进程随机生成，重启即全体失效 |
 | MAX_API_CONCURRENCY    | `128`                  | API（含探针与贴图字节）的同时处理上限                      |
 | MAX_STATIC_CONCURRENCY | `64`                   | 静态页面与 `/assets/*` 的同时处理上限                      |
 | GOMEMLIMIT             | 不设（Go 自己决定）    | Go 的 GC 软上限；由 Go 运行时解析，应用不校验              |
 
-部署描述（`k8s.scoped-skin.yaml` 的 ConfigMap）按这张表填，例外两条：`ADMIN_USERNAME` / `ADMIN_PASSWORD` 是凭据，不进 ConfigMap，要固定就单独用 Secret 注入（留空则首个启动日志里给随机密码）；`READYZ_TOKEN` 同时出现在 `readinessProbe` 的 `?token=` 里，改的时候两处一起改。
+部署描述（`k8s.scoped-skin.yaml`）把非凭据项放 ConfigMap、凭据项放 Secret 并以 `secretRef` 注入：`READYZ_TOKEN`、`SESSION_SIGNING_KEY`、`ADMIN_USERNAME`、`ADMIN_PASSWORD`（模板里还留了一个本项目未启用的 `AUTH_TOKEN`）。`READYZ_TOKEN` 同时出现在 `readinessProbe` 的 `?token=` 里，改的时候两处一起改；这些凭据被读进内存后立刻从进程环境表里删掉，免得子进程继承。
 
 ### 1.2. 首次启动
 
@@ -182,8 +183,8 @@ flowchart LR
 - **进服暗号**：`serverId` 由服务端下发，`hasJoined` 核对一次即作废，所以不能重复调用（防重放）；`join` 时记下客户端 IP，`hasJoined` 带了 `ip` 就比对，对不上也算不通过。
 - **错误**：业务异常按规范返回 `403` + `{"error": "ForbiddenOperationException", "errorMessage": "..."}`（令牌无效 `Invalid token.`、凭据不对 `Invalid credentials. Invalid username or password.`）；一般 HTTP 异常的 `error` 取状态码的 Reason Phrase。
 - **贴图**：`textures` 属性 = `base64(JSON)`，`SKIN.url` 指向 [3.4 /api/assets/{asset_id}](#34-apiassetsasset_id)（内容寻址、公开只读，客户端直接拉）；`kind` 映射到 `metadata.model`：`skin.steve` → `default`（正常手臂宽度）、`skin.alex` → `slim`（细手臂），`cape` 本就不是皮肤、不带 metadata；`unsigned=false` 时用 **RSA-SHA1** 对 base64 串签名，公钥即根元数据里的 `signaturePublickey`，私钥落在 `DATA_DIR/private.pem`（首次启动生成 4096 位）。
-- **与站点登录的关系**：两套 token 互不相通 —— 站点 token 是 HMAC（密钥每次启动随机，重启即全部失效）；Yggdrasil 的 `accessToken` 是随机数、也只活在内存里。管理员在 `/maintain` 动过某个账号（删号 / 改 UUID / 改凭据）时，会按 uuid 把这个账号的 Yggdrasil 会话一并清掉。
-- **防爆破**：应用侧不做限流；`authenticate` / `signout` 依靠恒定请求时间 —— 无论账号存不存在，每次请求都至少消耗 1 秒才返回（[5.3 防爆破与加固措施](#53-防爆破与加固措施)），单个客户端的串行请求频率因此不超过 60 次/分钟。更严格的频率上限由反向代理承担（[1.4](#14-反向代理)）。
+- **与站点登录的关系**：两套凭据互不相通 —— 站点凭据是用 `SESSION_SIGNING_KEY` 签名的无状态凭据（默认 30 天过期；密钥留空则每次启动随机生成，重启即全体失效）；Yggdrasil 的 `accessToken` 是随机数、只活在内存里。管理员在 `/maintain` 动过某个账号（删号 / 改 UUID / 改凭据）时，会按 uuid 把这个账号的 Yggdrasil 会话一并清掉；站点凭据不受影响，照旧有效到过期。
+- **防爆破**：应用侧不做限流；`authenticate` / `signout` 依靠恒定请求时间 —— 无论账号存不存在，每次请求都至少消耗 1 秒（再加 0~200ms 抖动）才返回（[5.3 防爆破与加固措施](#53-防爆破与加固措施)），单个客户端的串行请求频率因此不超过 60 次/分钟。更严格的频率上限由反向代理承担（[1.4](#14-反向代理)）。
 - **profile 与签名细节**：`authenticate` 带 `requestUser=true` 时响应另含 `user`；profile 的 `id` 为无横线 UUID，接口亦接受带横线与大写的写法（查询宽容、写入严格），角色不存在回 `204` 而非 `403`；`unsigned` 默认 `true`（不带签名），仅显式 `unsigned=false` 时签名。textures 属性为 `base64(JSON)`，含 `timestamp`（Java 毫秒）、`profileId`、`profileName`；签名算法为 RSA-SHA1 + PKCS1v15，密钥对落在 `DATA_DIR/private.pem`（PKCS#8）与 `public.pem`（PKIX），首次启动以标准库 `crypto/rsa` 生成 4096 位后复用
 - **材质 URL 与 skinDomains**：材质 URL 以请求的 `Host` 拼接绝对地址，`X-Forwarded-Proto: https`（仅当连接对端落在 `TRUSTED_PROXIES` 网段里才认，见 [5.5](#55-源-ip-与反向代理)）时用 https；`skinDomains` 白名单为请求所用域名加 `127.0.0.1` 与 `localhost`
 - **`hasJoined` 的 IP 核对**：`ip` 不一致时返回 `204` **且不消费暗号**（避免一个抄错 IP 的查询把玩家挡在门外）。经反代或 NAT 时两端观察到的 IP 可能不同，此情形下不应开启 MC 服务端的 `prevent-proxy-connections`
@@ -329,7 +330,7 @@ flowchart LR
   bearer --> pwd
   bearer --> role
   role --> manage
-  manage -->|"改凭据即作废旧 token"| db
+  manage -->|"改凭据：清 Yggdrasil 会话"| db
   pwd --> db
   bearer --> db
   ygg --> db
@@ -374,7 +375,7 @@ flowchart LR
 
 ### 5.3. 防爆破与加固措施
 
-- **恒定请求时间**：无论账号存在与否、密码对错，账号验证都至少等待 1 秒才返回，用来抹掉「不存在的账号秒回」这个时序侧信道，也顺带把单客户端的请求频率压到 60 次/分钟以下；
+- **恒定请求时间**：无论账号存在与否、密码对错，账号验证都至少等待 1 秒（再加 0~200ms 抖动）才返回，用来抹掉「不存在的账号秒回」这个时序侧信道，也顺带把单客户端的请求频率压到 60 次/分钟以下；
 - **Argon2id 并发上限**：同时进行的校验最多 4 个（`app.ArgonConcurrency`）。每次校验要吃 19 MiB，不限并发即等于放弃内存上限（实测 30 并发会把常驻内存从 18 MiB 抬到 513 MiB）；
 - **请求并发上限**：两半各一个独立的闸门，各用一份槽位、互不排队（超出的在闸门外等，客户端断开即直接放行）。API 那一半（`/api/*` 与探针）吃 `MAX_API_CONCURRENCY`（默认 `128`），避免 goroutine / SQLite / Argon2 同时被放开；静态那一半（页面与 `/assets/*`）吃 `MAX_STATIC_CONCURRENCY`（默认 `64`），只防止一次页面加载把内嵌文件同时读爆；
 - **安全响应头**：所有响应都带 `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Frame-Options: DENY`。CSP 暂不引入（前端的模板在构建期编译，不再需要 `unsafe-eval`）；
@@ -401,15 +402,15 @@ flowchart LR
 
 ### 5.6. 会话与凭据
 
-两套凭据互不相通，且都只存在于内存：
+两套凭据互不相通：站点凭据无状态（服务端不存，验签即认），Yggdrasil 的内存会话只活在进程里：
 
 | 凭据                    | 形态                                                                                                               | 生命周期                   | 失效方式                                                                                                                |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| 站点 token              | `HMAC-SHA256(进程密钥, uuid + \x1F + 账号名 + \x1F + password_hash)`（`\x1F` 为 ASCII 单元分隔符；[3.6](#36-api)） | 不过期；进程重启即全部失效 | 改该账号的 uuid / 账号名 / 密码，或重启服务                                                                             |
+| 站点凭据                | `base64url(exp\|uuid\|nonce) + "." + base64url(HMAC-SHA256(SESSION_SIGNING_KEY, "v1\|" + 载荷))`，载荷是 `exp\|uuid\|nonce`（nonce 16 字节，[3.6](#36-api)） | 30 天，到点即失效 | 轮换 `SESSION_SIGNING_KEY`（全员下线）；删号后凭据未过期但账号已不在库里，仍然 401；改凭据不影响已签发的凭据 |
 | Yggdrasil `accessToken` | 随机 32 位无横线 hex（[3.5](#35-apiyggdrasil)）                                                                    | 30 天；进程重启即全部失效  | `invalidate`（单个）、`signout`（该账号全部）、`refresh`（被轮换的那个）、改动账号、同账号超过 8 个令牌时最旧的先被顶掉 |
 
 - **口令**：库中只保存 Argon2id 哈希（默认 `m=19456, t=2, p=1`）；失败一律「用户名或密码不正确」，不暴露账号是否存在。
-- **凭据变更即失效**：管理员改动某账号的 uuid / 账号名 / 密码后，该账号的站点 token 立即失效（内存 token 表按库中字段整表重算，同一进程内未被改动者不变）；其 Yggdrasil 会话一并清除，`/authserver/validate` 随即返回 `403`。删号与改 UUID 按 UUID 清，本次被改过的账号直接清。
+- **凭据变更**：管理员改动某账号的 uuid / 账号名 / 密码后，其 Yggdrasil 会话立即清除，`/authserver/validate` 随即返回 `403`；站点凭据无状态，不会因此提前失效（换「不存会话表」的代价，见 [5.7](#57-设计取舍)）。删号与改 UUID 按 UUID 清 Yggdrasil 会话；站点凭据每次请求都要回库取账号，账号没了自然 `401`。
 - **站点 token 的存放**：前端置于 `localStorage` 并放在 `Authorization` 头中 —— 不涉及 cookie，因而没有 CSRF 面；代价是 XSS 即等同于交出账号。
 - **贴图公开**：`/api/assets/{asset_id}` 不鉴权（`<img>` 无法附带自定义头，且 URL 本身即内容哈希）；这是皮肤系统能工作的前提，不属于遗漏。
 
@@ -417,9 +418,9 @@ flowchart LR
 
 | 取舍                                          | 理由                                                                                                  | 代价                                                                          |
 | --------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| 应用侧不做限流，改用恒定请求时间              | 免去按 IP / 按用户的共享状态；恒定 1 秒同时抹掉时序侧信道                                             | 只约束串行请求（60 次/分钟），并发下的频率上限必须由反代 `limit_req` 承担     |
-| 站点 token 采用进程随机密钥的 HMAC            | 库文件（uuid / 账号名 / password_hash）本身不足以推出 token                                           | 重启即全体掉线；无法单条吊销                                                  |
-| 站点 token 不落库、不过期                     | 省去会话表、清理与续期逻辑                                                                            | 泄漏后只能靠改密码或重启收回                                                  |
+| 应用侧不做限流，改用恒定请求时间              | 免去按 IP / 按用户的共享状态；1 秒（含 0~200ms 抖动）同时抹掉时序侧信道                                             | 只约束串行请求（60 次/分钟），并发下的频率上限必须由反代 `limit_req` 承担     |
+| 站点凭据无状态、用 `SESSION_SIGNING_KEY` 签名 | 服务端不存会话表，任何实例都能独立验签，水平扩容不用共享状态                                          | 无法单条吊销，只能轮换密钥一次性下线；密钥留空则重启即全员掉线                |
+| 站点凭据 30 天过期、不落库                    | 省去会话表、清理与续期逻辑                                                                            | 泄漏后在有效期内一直可用；改密码不会让它提前失效                              |
 | 首次启动只建一个管理员，不开放注册            | 私域使用，注册与邮箱校验的成本高于收益                                                                | 新增账号必须由管理员操作                                                      |
 | 不提供自助改密、找回与 2FA                    | 账号唯一入口是管理员，与上一条同源                                                                    | 忘记密码只能由管理员重置                                                      |
 | 贴图内容寻址（入库字节的 sha256）并强制重编码 | 天然去重、ID 稳定；重编码同时满足规范「除去与位图无关数据」的要求                                     | 前端无法自算 ID，故需 `/api/precheck`；像素相同而元数据不同的文件会合并为一条 |
@@ -441,7 +442,7 @@ flowchart LR
 ```mermaid
 flowchart TD
   open["打开 / 或 /maintain"] --> has{"localStorage 里有 token？"}
-  has -->|没有| login["/auth：POST /api/auth/login<br/>Argon2id 恒定约 1 秒"]
+  has -->|没有| login["/auth：POST /api/auth/login<br/>Argon2id 至少 1 秒"]
   has -->|有| req["每个请求带<br/>Authorization: Bearer + Accept-Language"]
   login -->|"成功：token 与 player 存 localStorage"| req
   login -->|失败| audit["审计：login 与写操作"]

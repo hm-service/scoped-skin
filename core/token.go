@@ -4,97 +4,91 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
+	"encoding/base64"
+	"strconv"
 	"strings"
-	"sync"
+	"time"
 )
 
-type Credential struct {
-	UUID         string
-	Username     string
-	PasswordHash string
+// 站点会话凭据是无状态的：服务端不存会话表，凭据自带账号与过期时间，用
+// SESSION_SIGNING_KEY 签名。代价是签出去的凭据撤不回来 —— 只能轮换 key 把所有人下线。
+const (
+	SessionTokenTTL  = 30 * 24 * time.Hour
+	SessionNonceSize = 16
+	sessionVersion   = "v1"
+)
+
+// 载荷与签名都用不带填充的 base64url：凭据要原样塞进 Authorization 头。
+var sessionBase64 = base64.RawURLEncoding
+
+// SiteTokens 签发与校验站点凭据：
+//
+//	base64url(exp|uuid|nonce) + "." + base64url(HMAC-SHA256(key, "v1|" + 载荷))
+//
+// 载荷在规范的 exp|nonce 之外多带一个 uuid：本站是多账号的，凭据得自己说明它属于谁。
+type SiteTokens struct {
+	key []byte
 }
 
-// 站点 token 的拼接分隔符：用不可见字符，避免字段内容里的冒号造成歧义。
-const tokenSeparator = "\x1f"
+func NewSiteTokens(key []byte) *SiteTokens { return &SiteTokens{key: key} }
 
-const TokenSecretBytes = 32
+// SessionKey 生成一把能直接填进 SESSION_SIGNING_KEY 的随机密钥（32 字节 = 64 位 hex）。
+func SessionKey() (string, error) { return RandomHex(32) }
 
-// token = HMAC-SHA256(secret, uuid + "\x1f" + username + "\x1f" + password_hash)，secret 只活在内存里、
-// 每次启动重新随机：所以光有库（uuid / 账号名 / password_hash 都在里头）
-// 推不出别人的 token，而重启会让所有人的站点 token 一起失效。
-type TokenStore struct {
-	secret []byte
-	mu     sync.RWMutex
-	// 键是 token 的定长摘要：明文当键会让「长度 / 匹配了多少」从查找本身漏成时间差。
-	byToken map[string]tokenEntry
-}
-
-// tokenEntry 的 digest 与键同源，取出后再恒时比较一次，避免把安全性建立在 map 的内部实现上。
-type tokenEntry struct {
-	digest [32]byte
-	uuid   string
-}
-
-// tokenDigest 把任意长度的令牌折成固定长度，供查找与恒时比较共用。
-func tokenDigest(token string) [32]byte {
-	return sha256.Sum256([]byte(token))
-}
-
-func tokenKey(token string) string {
-	digest := tokenDigest(token)
-	return string(digest[:])
-}
-
-func NewTokenStore() (*TokenStore, error) {
-	secret, err := RandomBytes(TokenSecretBytes)
+// Issue 给某个账号签一张凭据，过期时间为 now + SessionTokenTTL。
+func (t *SiteTokens) Issue(uuid string, now time.Time) (string, error) {
+	nonce, err := RandomBytes(SessionNonceSize)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return &TokenStore{secret: secret, byToken: make(map[string]tokenEntry)}, nil
+	payload := sessionBase64.EncodeToString([]byte(strings.Join([]string{
+		strconv.FormatInt(now.Add(SessionTokenTTL).Unix(), 10),
+		uuid,
+		sessionBase64.EncodeToString(nonce),
+	}, "|")))
+	return payload + "." + sessionBase64.EncodeToString(t.sign(payload)), nil
 }
 
-// TokenFor 算出某个账号的 token，但不改令牌表。
-func (t *TokenStore) TokenFor(credential Credential) string {
-	mac := hmac.New(sha256.New, t.secret)
-	mac.Write([]byte(strings.Join([]string{credential.UUID, credential.Username, credential.PasswordHash}, tokenSeparator)))
-	return hex.EncodeToString(mac.Sum(nil))
-}
-
-func (t *TokenStore) Register(credential Credential) string {
-	token := t.TokenFor(credential)
-	digest := tokenDigest(token)
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.byToken[string(digest[:])] = tokenEntry{digest: digest, uuid: credential.UUID}
-	return token
-}
-
-// 密钥在本次进程里是固定的，所以没被改动的账号 token 不变、依旧有效；被改过 uuid /
-// 账号名 / 密码的账号，旧 token 会在这里被丢掉 —— 也就是「改凭据即踢下线」。
-func (t *TokenStore) Rebuild(credentials []Credential) {
-	tokens := make(map[string]tokenEntry, len(credentials))
-	for _, credential := range credentials {
-		token := t.TokenFor(credential)
-		digest := tokenDigest(token)
-		tokens[string(digest[:])] = tokenEntry{digest: digest, uuid: credential.UUID}
-	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.byToken = tokens
-}
-
-// Resolve 把 token 换成 uuid；不认识就返回空串。
-func (t *TokenStore) Resolve(token string) string {
-	if token == "" {
+// Verify 把凭据换成 uuid。先验签、再看过期：任一不过都返回空串。
+func (t *SiteTokens) Verify(token string, now time.Time) string {
+	payload, signature, found := strings.Cut(token, ".")
+	if !found || payload == "" || signature == "" {
 		return ""
 	}
-	digest := tokenDigest(token)
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	entry, ok := t.byToken[string(digest[:])]
-	if !ok || subtle.ConstantTimeCompare(entry.digest[:], digest[:]) != 1 {
+	got, err := sessionBase64.DecodeString(signature)
+	if err != nil || subtle.ConstantTimeCompare(got, t.sign(payload)) != 1 {
 		return ""
 	}
-	return entry.uuid
+	raw, err := sessionBase64.DecodeString(payload)
+	if err != nil {
+		return ""
+	}
+	exp, uuid, ok := parseSessionPayload(string(raw))
+	if !ok || now.Unix() >= exp {
+		return ""
+	}
+	return uuid
+}
+
+func (t *SiteTokens) sign(payload string) []byte {
+	mac := hmac.New(sha256.New, t.key)
+	mac.Write([]byte(sessionVersion + "|" + payload))
+	return mac.Sum(nil)
+}
+
+// parseSessionPayload 拆开 exp|uuid|nonce。
+func parseSessionPayload(raw string) (int64, string, bool) {
+	exp, rest, found := strings.Cut(raw, "|")
+	if !found {
+		return 0, "", false
+	}
+	uuid, _, found := strings.Cut(rest, "|")
+	if !found || uuid == "" {
+		return 0, "", false
+	}
+	seconds, err := strconv.ParseInt(exp, 10, 64)
+	if err != nil {
+		return 0, "", false
+	}
+	return seconds, uuid, true
 }

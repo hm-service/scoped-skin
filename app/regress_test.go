@@ -83,9 +83,9 @@ func TestReadyFailsWithoutSigningKeys(t *testing.T) {
 	}
 }
 
-// RefreshTokens 要把「uuid 从库里消失」的账号的 Yggdrasil 内存会话一并清掉：
+// ResetSessions 要把「uuid 从库里消失」的账号的 Yggdrasil 内存会话一并清掉：
 // accessToken 只活在内存里，不显式作废就会一直有效。
-func TestRefreshTokensRevokesSessionsOfVanishedUsers(t *testing.T) {
+func TestResetSessionsRevokesSessionsOfVanishedUsers(t *testing.T) {
 	instance := openInstance(t, func(cfg *Config) { cfg.AdminPassword = "password_1234" })
 
 	steve, err := instance.Store.CreateUser("steve", "steve123", "steve", "normal")
@@ -93,7 +93,7 @@ func TestRefreshTokensRevokesSessionsOfVanishedUsers(t *testing.T) {
 		t.Fatalf("建号失败: %v", err)
 	}
 	// 先重建一次，让 knownUUIDs 里记上 steve
-	if err := instance.RefreshTokens(); err != nil {
+	if err := instance.ResetSessions(); err != nil {
 		t.Fatalf("重建 token 表失败: %v", err)
 	}
 	accessToken, _, err := instance.Sessions.Create(steve.UUID, "")
@@ -108,7 +108,7 @@ func TestRefreshTokensRevokesSessionsOfVanishedUsers(t *testing.T) {
 	if status, err := instance.Store.DeleteUser(steve.UUID); err != nil || status != "deleted" {
 		t.Fatalf("删号失败: %q (%v)", status, err)
 	}
-	if err := instance.RefreshTokens(); err != nil {
+	if err := instance.ResetSessions(); err != nil {
 		t.Fatalf("重建 token 表失败: %v", err)
 	}
 	if session, ok := instance.Sessions.Get(accessToken); ok {

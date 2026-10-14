@@ -120,22 +120,38 @@ func validHostname(host string) bool {
 	return true
 }
 
-// readReadyzToken 读 READYZ_TOKEN：留空表示探针不设门槛；
-// 设了就必须是 16-128 位、只含小写字母 / 数字 / 下划线 —— 它要拼进 URL，写错不如启动时就拦下。
-func readReadyzToken() (string, error) {
-	token := os.Getenv("READYZ_TOKEN")
-	if token == "" {
+// readSecret 读一个凭据类环境变量：长度与字符集都对得上才收，读完立刻从进程环境表里删掉 ——
+// 免得子进程把它继承过去。留空返回空串，默认行为由调用方决定。
+func readSecret(name string, minLength, maxLength int) (string, error) {
+	value := os.Getenv(name)
+	_ = os.Unsetenv(name)
+	if value == "" {
 		return "", nil
 	}
-	if len(token) < 16 || len(token) > 128 {
-		return "", fmt.Errorf("READYZ_TOKEN must be 16-128 characters long, got %d", len(token))
+	if len(value) < minLength || len(value) > maxLength {
+		return "", fmt.Errorf("%s must be %d-%d characters long, got %d", name, minLength, maxLength, len(value))
 	}
-	for _, r := range token {
-		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
-			return "", fmt.Errorf("READYZ_TOKEN may only contain lowercase letters, digits and underscores, got %q", r)
+	for _, r := range value {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
+			return "", fmt.Errorf("%s may only contain letters, digits and underscores, got %q", name, r)
 		}
 	}
-	return token, nil
+	return value, nil
+}
+
+// readReadyzToken 读 READYZ_TOKEN：留空表示探针不设门槛。
+func readReadyzToken() (string, error) { return readSecret("READYZ_TOKEN", 16, 128) }
+
+// readSessionSigningKey 读 SESSION_SIGNING_KEY：留空表示本次进程随机生成一把，
+// 那样重启之后已签发的凭据全部失效。
+func readSessionSigningKey() (string, error) { return readSecret("SESSION_SIGNING_KEY", 32, 128) }
+
+// readAdminPassword 读 ADMIN_PASSWORD：只在首次启动建号时用得上，读完同样从环境表里删掉。
+// 长度与字符集由建号那一步按账号规则校验，不在这里重复一遍。
+func readAdminPassword() string {
+	password := os.Getenv("ADMIN_PASSWORD")
+	_ = os.Unsetenv("ADMIN_PASSWORD")
+	return password
 }
 
 // checkTimezone 读 TZ：设了就必须是 Go 认得的地名。
@@ -192,19 +208,30 @@ func main() {
 		slog.Error("init failed", slog.Any("error", err))
 		os.Exit(1)
 	}
+	sessionKey, err := readSessionSigningKey()
+	if err != nil {
+		slog.Error("init failed", slog.Any("error", err))
+		os.Exit(1)
+	}
+	if sessionKey == "" {
+		slog.Warn("SESSION_SIGNING_KEY is not set; issued credentials will not survive a restart")
+	}
+	// 管理员密码也是凭据：读完就删，别让它留在环境表里。
+	adminPassword := readAdminPassword()
 	if err := checkTimezone(); err != nil {
 		slog.Error("init failed", slog.Any("error", err))
 		os.Exit(1)
 	}
 
 	instance, err := app.Open(app.Config{
-		DataDir:        os.Getenv("DATA_DIR"),
-		Version:        version,
-		BuiltinFS:      builtin.Files,
-		AdminUsername:  os.Getenv("ADMIN_USERNAME"),
-		AdminPassword:  os.Getenv("ADMIN_PASSWORD"),
-		TrustedProxies: os.Getenv("TRUSTED_PROXIES"),
-		ReadyzToken:    readyzToken,
+		DataDir:           os.Getenv("DATA_DIR"),
+		Version:           version,
+		BuiltinFS:         builtin.Files,
+		AdminUsername:     os.Getenv("ADMIN_USERNAME"),
+		AdminPassword:     adminPassword,
+		TrustedProxies:    os.Getenv("TRUSTED_PROXIES"),
+		SessionSigningKey: sessionKey,
+		ReadyzToken:       readyzToken,
 	})
 	if err != nil {
 		slog.Error("init failed", slog.Any("error", err))

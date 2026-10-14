@@ -5,12 +5,13 @@ on:
         branches:
             - main
         paths-ignore:
-            - "README.md"
+            - "AGENTS.md"
             - "DESIGN.md"
+            - "justfile"
             - "k8s.scoped-skin.yaml"
             - "scoped-skin.kube"
             - "LICENSE"
-            - "justfile"
+            - "README.md"
             - "docs/**"
             - ".gitignore"
     workflow_dispatch:
@@ -32,7 +33,7 @@ jobs:
                   go-version-file: go.mod
                   cache: true
 
-            # go:embed all:frontend/dist 要求编译期磁盘上就有可嵌入的文件
+            # go:embed 要求编译期 frontend/dist 里有可嵌入文件
             - name: Stub frontend/dist
               run: mkdir -p frontend/dist && touch frontend/dist/STUB
 
@@ -60,14 +61,13 @@ jobs:
             - name: Set up Node
               uses: actions/setup-node@v7
               with:
-                  node-version: "26.7.0"
+                  node-version: 26.7.0
                   cache: pnpm
                   cache-dependency-path: frontend/pnpm-lock.yaml
 
             - name: Install
               run: cd frontend && pnpm install --frozen-lockfile
 
-            # 类型检查同时守着文案表：t() 的参数类型就是 catalog 的键，漏配 / 键名写错都过不去
             - name: Type check
               run: cd frontend && pnpm typecheck
 
@@ -122,8 +122,6 @@ jobs:
                   context: .
                   push: true
                   provenance: false
-                  # amd64 + arm64 双架构：构建阶段在 $BUILDPLATFORM 上交叉编译，
-                  # 只有运行时阶段的 apk add 走 QEMU
                   platforms: linux/amd64,linux/arm64
                   # 同时打上 latest 和 日期 tag
                   tags: |

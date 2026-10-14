@@ -36,11 +36,28 @@ build: frontend
     done
     ls -l {{ DIST }}
 
+# 提交前跑一遍：Go 的 vet + test，加前端的类型检查（缺前端依赖会按锁文件装一次）
+check: vet test
+    cd frontend && pnpm install --frozen-lockfile
+    cd frontend && pnpm typecheck
+
+# 跑全部测试（没有前端产物就先造占位，Go 的测试不需要真前端）
+test: frontend-stub
+    go test ./... -count=1
+
+# go vet
+vet: frontend-stub
+    go vet ./...
+
+# go fmt 本模块的包
+fmt:
+    go fmt ./...
+
 # 本机跑起来（HOST / PORT / READYZ_TOKEN / TZ 等直接走环境变量）
 run: frontend
     DATA_DIR={{ DATA_DIR }} go run .
 
-# 停止本机上这份服务：按监听端口定位进程 → 确认确实属于本项目 → SIGINT 等它自己退
+# 停止本机上这份服务：按监听端口定位进程 → 确认确实属于本项目 → SIGINT
 stop:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -55,7 +72,6 @@ stop:
         echo "端口 $port 在监听，但看不到进程（多半属于别的用户）：用 sudo 自行确认" >&2
         exit 1
     fi
-    # 端口可能是别人的：只有 cwd 就是本项目才动手，否则把 pid 报出来让人自己判断
     ours=(); foreign=()
     for p in "${pids[@]}"; do
         cwd="$(readlink "/proc/$p/cwd" 2>/dev/null || echo '?')"
@@ -77,37 +93,20 @@ stop:
     echo "5 秒后端口 $port 仍在监听；未强杀，请自行检查" >&2
     exit 1
 
-# 提交前跑一遍：Go 的 vet + test，加前端的类型检查（缺前端依赖会按锁文件装一次）
-check: vet test
-    cd frontend && pnpm install --frozen-lockfile
-    cd frontend && pnpm typecheck
-
-# 跑全部测试（没有前端产物就先造占位，Go 的测试不需要真前端）
-test: frontend-stub
-    go test ./... -count=1
-
-# go vet
-vet: frontend-stub
-    go vet ./...
-
-# go fmt 本模块的包
-fmt:
-    go fmt ./...
-
 # 清掉构建产物与万一落在仓库里的 Go 缓存
 clean:
     rm -rf {{ DIST }} .go-build
     chmod -R u+w .go-mod-cache 2>/dev/null || true
     rm -rf .go-mod-cache
 
-# 提交并推送：just push "提交信息"（没有改动就只打印一行，不提交也不推）
+# 提交并推送：just push "提交信息"（没有改动就只推送，不要求先有提交）
 push message:
     #!/usr/bin/env bash
     set -euo pipefail
     git add -A
     if git diff --cached --quiet; then
-        echo "没有改动，跳过提交与推送"
-        exit 0
+        echo "没有改动，直接推送"
+    else
+        git commit -m "$1"
     fi
-    git commit -m "$1"
     git push

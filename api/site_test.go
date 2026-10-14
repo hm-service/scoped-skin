@@ -624,7 +624,7 @@ func TestAdminUsers(t *testing.T) {
 		t.Fatalf("新建的用户没出现在列表里: %s", list.Body.String())
 	}
 
-	// 改账号名：旧 token 立刻 401，新账号名算出来的 token 可用
+	// 改账号名：站点凭据认的是 uuid 且无状态，旧凭据照旧可用到过期
 	oldToken := testenv.Token(t, instance, "tester")
 	recorder = testenv.Do(handler, http.MethodPatch, "/api/admin/users/"+uuid,
 		map[string]any{"username": "tester2"}, adminToken)
@@ -635,8 +635,8 @@ func TestAdminUsers(t *testing.T) {
 		t.Errorf("改完的账号名不对: %s", recorder.Body.String())
 	}
 	recorder = testenv.Do(handler, http.MethodGet, "/api/auth/session", nil, oldToken)
-	if recorder.Code != http.StatusUnauthorized {
-		t.Fatalf("旧 token 状态码 = %d，想要 401", recorder.Code)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("旧凭据状态码 = %d，想要 200", recorder.Code)
 	}
 	newToken := testenv.Token(t, instance, "tester2")
 	if recorder = testenv.Do(handler, http.MethodGet, "/api/auth/session", nil, newToken); recorder.Code != http.StatusOK {

@@ -38,8 +38,12 @@ type Config struct {
 	AdminUsername string
 	AdminPassword string
 
-	// TrustedProxies 是逗号分隔的 IP / CIDR，见 ；留空只信本机。
+	// TrustedProxies 是逗号分隔的 IP / CIDR；留空只信本机。
 	TrustedProxies string
+
+	// SessionSigningKey 是站点凭据的签名密钥（SESSION_SIGNING_KEY）；
+	// 留空则本次进程随机生成一把 —— 那样重启即所有凭据失效。
+	SessionSigningKey string
 
 	// ReadyzToken 非空时，/readyz 必须先带上 ?token=<它> 才应答；
 	// 留空则探针公开，跟以前一样。
@@ -50,7 +54,7 @@ type Config struct {
 type App struct {
 	Config   Config
 	Store    *db.Store
-	Tokens   *core.TokenStore
+	Tokens   *core.SiteTokens
 	Sessions *core.Sessions
 	Joins    *core.Joins
 	Keys     *core.SigningKeys
@@ -94,11 +98,14 @@ func Open(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("load signing key: %w", err)
 	}
 
-	tokens, err := core.NewTokenStore()
-	if err != nil {
-		store.Close()
-		return nil, fmt.Errorf("initialize token table: %w", err)
+	signingKey := cfg.SessionSigningKey
+	if signingKey == "" {
+		if signingKey, err = core.SessionKey(); err != nil {
+			store.Close()
+			return nil, fmt.Errorf("generate session signing key: %w", err)
+		}
 	}
+	tokens := core.NewSiteTokens([]byte(signingKey))
 
 	concurrency := max(ArgonConcurrency, 1)
 	instance := &App{
@@ -118,7 +125,7 @@ func Open(cfg Config) (*App, error) {
 		instance.Close()
 		return nil, err
 	}
-	if err := instance.RefreshTokens(); err != nil {
+	if err := instance.ResetSessions(); err != nil {
 		instance.Close()
 		return nil, err
 	}
@@ -175,26 +182,20 @@ func (a *App) ClientIP(r *http.Request) string { return a.proxies.ClientIP(r) }
 // PeerTrusted 报告连接的对端是否可信：反代头只有在可信时才作数。
 func (a *App) PeerTrusted(r *http.Request) bool { return a.proxies.PeerTrusted(r) }
 
-// RefreshTokens 用户表动过之后重建 token 表，并作废相关账号的 Yggdrasil 内存会话。
+// ResetSessions 用户表动过之后作废相关账号的 Yggdrasil 内存会话。
 //
-// 站点 token 是确定性哈希：整表按库里的字段重算，被改过凭据的账号旧 token 就此失效，
-// 没被改动的账号算出来还是原来那个。Yggdrasil 的 accessToken 是随机数、只存在内存里，
-// 所以只能显式作废：uuid 消失（删号 / 改 uuid）的账号一律清掉，另外把本次直接改过的
-// 账号 resetSessions 也清掉。
-func (a *App) RefreshTokens(resetSessions ...string) error {
+// 站点凭据是无状态的、自带过期时间，签出去就撤不回来（只有轮换 SESSION_SIGNING_KEY 才能
+// 把所有人下线）；Yggdrasil 的 accessToken 是随机数、只存在内存里，所以这里显式清掉：
+// uuid 从库里消失（删号 / 改 uuid）的账号一律清，另外把本次直接改过的账号也清掉。
+func (a *App) ResetSessions(resetSessions ...string) error {
 	users, err := a.Store.Users()
 	if err != nil {
 		return err
 	}
-	credentials := make([]core.Credential, 0, len(users))
 	live := make(map[string]bool, len(users))
 	for _, user := range users {
-		credentials = append(credentials, core.Credential{
-			UUID: user.UUID, Username: user.Username, PasswordHash: user.PasswordHash,
-		})
 		live[user.UUID] = true
 	}
-	a.Tokens.Rebuild(credentials)
 
 	a.mu.Lock()
 	gone := []string{}
@@ -222,7 +223,7 @@ func (a *App) VerifyCredentials(username, password string) *db.User {
 	a.argon <- struct{}{}
 	user := a.Store.Authenticate(username, password)
 	<-a.argon
-	core.SleepUntil(start, core.LoginMinSeconds)
+	core.SleepUntil(start, core.LoginFloor())
 	return user
 }
 

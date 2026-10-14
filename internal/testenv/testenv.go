@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"scoped-skin/app"
 	"scoped-skin/builtin"
@@ -107,21 +108,23 @@ func Seed(t *testing.T, instance *app.App) {
 			t.Fatalf("播种测试账号 %s 失败: %v", account.Username, err)
 		}
 	}
-	if err := instance.RefreshTokens(); err != nil {
-		t.Fatalf("重建 token 表失败: %v", err)
+	if err := instance.ResetSessions(); err != nil {
+		t.Fatalf("重置会话失败: %v", err)
 	}
 }
 
-// Token 直接按固定算法算出某个账号的站点 token（不走登录接口，免得撞限流）。
+// Token 直接给某个账号签一张站点凭据（不走登录接口，免得撞限流）。
 func Token(t *testing.T, instance *app.App, username string) string {
 	t.Helper()
 	user := instance.Store.UserByUsername(username)
 	if user == nil {
 		t.Fatalf("测试账号不存在: %s", username)
 	}
-	return instance.Tokens.TokenFor(core.Credential{
-		UUID: user.UUID, Username: user.Username, PasswordHash: user.PasswordHash,
-	})
+	token, err := instance.Tokens.Issue(user.UUID, time.Now())
+	if err != nil {
+		t.Fatalf("签发测试凭据失败: %v", err)
+	}
+	return token
 }
 
 // Do 发一个请求。body 为 nil 时不带请求体，否则序列化成 JSON；token 非空时带 Bearer 头。
