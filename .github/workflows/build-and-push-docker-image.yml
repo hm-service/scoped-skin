@@ -99,23 +99,13 @@ jobs:
                   username: ${{ github.actor }}
                   password: ${{ secrets.GITHUB_TOKEN }}
 
-            # 登录到阿里云 ACR。runner 到 cn-chengdu 这条链路会几秒内 TLS 握手超时
-            # （首次跑就挂在登录上），docker/login-action 自己不重试，所以用 shell 重试：
-            # 失败最多 4 次，退避 15 / 30 / 45 秒。密码只从 stdin 进，不出现在命令行里。
+            # 登录到阿里云 ACR
             - name: Log in to ACR
-              env:
-                  ACR_REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
-                  ACR_USERNAME: ${{ secrets.ALIYUN_REGISTRY_USER }}
-                  ACR_PASSWORD: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
-              run: |
-                  for attempt in 1 2 3 4; do
-                      if printf '%s' "$ACR_PASSWORD" | docker login "$ACR_REGISTRY" --username "$ACR_USERNAME" --password-stdin; then
-                          exit 0
-                      fi
-                      echo "ACR 登录失败（第 $attempt 次，共 4 次），$((attempt * 15)) 秒后重试"
-                      sleep $((attempt * 15))
-                  done
-                  exit 1
+              uses: docker/login-action@v4
+              with:
+                  registry: ${{ secrets.ALIYUN_REGISTRY }}
+                  username: ${{ secrets.ALIYUN_REGISTRY_USER }}
+                  password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
 
             # 获取当前日期 (yyyy-MM-dd) 并强制仓库所有者名小写
             - name: Prepare Image Tags
@@ -141,8 +131,3 @@ jobs:
                       ${{ secrets.ALIYUN_REGISTRY }}/${{ secrets.ALIYUN_REGISTRY_NAMESPACE }}/scoped-skin:latest
                   cache-from: type=gha
                   cache-to: type=gha,mode=max
-
-            # 凭据在 runner 的 docker config 里，用完就清掉（runner 一次性，这里只是别留着）
-            - name: Log out of ACR
-              if: always()
-              run: docker logout "${{ secrets.ALIYUN_REGISTRY }}" || true
