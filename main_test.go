@@ -60,8 +60,8 @@ func TestReadHost(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{name: "没设用默认值", want: "127.0.0.1"},
-		{name: "IPv4", host: "0.0.0.0", want: "0.0.0.0"},
+		{name: "没设用默认值", want: "0.0.0.0"},
+		{name: "IPv4", host: "192.0.2.7", want: "192.0.2.7"},
 		{name: "IPv6", host: "::1", want: "::1"},
 		{name: "主机名", host: "api.example.com", want: "api.example.com"},
 		{name: "单标签主机名", host: "localhost", want: "localhost"},

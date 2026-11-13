@@ -2,17 +2,9 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-    name: env
+    name: scoped-skin-env
 data:
-    HOST: "0.0.0.0"
-    PORT: "8080"
-    TZ: "Asia/Shanghai"
-    DATA_DIR: "/data"
     TRUSTED_PROXIES: "127.0.0.1/32,::1/128"
-    MAX_API_CONCURRENCY: "128"
-    MAX_AUTH_CONCURRENCY: "32"
-    MAX_STATIC_CONCURRENCY: "64"
-    GOMEMLIMIT: "128MiB"
 
 ---
 apiVersion: v1
@@ -23,8 +15,6 @@ type: Opaque
 stringData:
     READYZ_TOKEN: "your_readyz_token"
     SESSION_SIGNING_KEY: "your_very_safe_session_signing_key"
-    ADMIN_USERNAME: "admin"
-    ADMIN_PASSWORD: "your_admin_password"
 
 ---
 apiVersion: v1
@@ -63,7 +53,7 @@ spec:
 
           envFrom:
               - configMapRef:
-                    name: env
+                    name: scoped-skin-env
               - secretRef:
                     name: secrets
           ports:

@@ -14,7 +14,7 @@
 | ---------------------- | ---------------------- | ---------------------------------------------------------- |
 | DATA_DIR               | `/data`                | 数据存储目录：`app.db` 与 `private.pem`                    |
 | TZ                     | `Asia/Shanghai`        | 时区，用于日志时间戳                                       |
-| HOST                   | `127.0.0.1`            | 监听主机                                                   |
+| HOST                   | `0.0.0.0`              | 监听主机                                                   |
 | PORT                   | `8080`                 | 监听端口                                                   |
 | ADMIN_USERNAME         | `admin`                | 首次启动建的**管理员账号名**（登录用；角色名固定 `admin`） |
 | ADMIN_PASSWORD         | 空（随机生成）         | 首次启动的管理员密码；留空则随机生成并打到启动日志里。     |
@@ -26,7 +26,7 @@
 | MAX_STATIC_CONCURRENCY | `64`                   | 静态页面与 `/assets/*` 的同时处理上限                      |
 | GOMEMLIMIT             | 不设（Go 自己决定）    | Go 的 GC 软上限；由 Go 运行时解析，应用不校验              |
 
-部署描述（`k8s.scoped-skin.yaml`）把非凭据项放 ConfigMap、凭据项放 Secret 并以 `secretRef` 注入：`READYZ_TOKEN`、`SESSION_SIGNING_KEY`、`ADMIN_USERNAME`、`ADMIN_PASSWORD`（模板里纯 token 认证用的 `AUTH_TOKEN` 本项目用不到，已删掉）。`READYZ_TOKEN` 同时出现在 `readinessProbe` 的 `?token=` 里，改的时候两处一起改；这些凭据被读进内存后立刻从进程环境表里删掉，免得子进程继承。
+部署描述（`k8s.scoped-skin.yaml`）只写偏离默认值的那几项：ConfigMap 里是 `TRUSTED_PROXIES`，Secret 里是 `READYZ_TOKEN` 与 `SESSION_SIGNING_KEY`（模板里纯 token 认证用的 `AUTH_TOKEN` 本项目用不到，已删掉）；`DATA_DIR`、`PORT`、`TZ`、`ADMIN_*`、`MAX_*` 都取默认值，需要时再加。`READYZ_TOKEN` 同时出现在 `readinessProbe` 的 `?token=` 里，改的时候两处一起改；这些凭据被读进内存后立刻从进程环境表里删掉，免得子进程继承。
 
 ### 1.2. 首次启动
 
