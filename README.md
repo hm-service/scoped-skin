@@ -38,7 +38,7 @@ just build                                 # 先构建前端，再交叉编译 l
 - `just build` 出 `.dist/app-linux-amd64` 与 `.dist/app-linux-arm64`，不需要交叉工具链；没有本机架构的产物，本地跑用 `just run`；
 - `just frontend` 只构建前端到 `frontend/dist/`（= `cd frontend && pnpm install --frozen-lockfile && pnpm build`），编译时才被 `go:embed` 嵌进二进制。
 
-改前端也可以 `cd frontend && pnpm dev`：Vite dev server 自己出页面（地址是 `/auth.html` 这种），`/api`、`/asset`、`/livez`、`/readyz` 反代到 127.0.0.1:8080。
+改前端也可以 `cd frontend && pnpm dev`：Vite dev server 自己出页面（地址是 `/auth.html` 这种），`/api`、`/livez`、`/readyz` 反代到 127.0.0.1:8080。
 
 容器：`docker build -t scoped-skin .`
 

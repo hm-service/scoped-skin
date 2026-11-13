@@ -22,12 +22,10 @@ const label = computed(() => modelShort(props.item));
 const short = computed(() => shortId(props.item));
 
 /**
- * 卡片上最多放两个 chip，超出的进悬浮面板。
- * 无论多少标签都只占一行，其余用「+N」带过 —— 标签区高度固定（.card .tags），卡片高度
- * 恒定（= .grid 的 --grid-row），虚拟列表按行高算滚动位置才准。
+ * 卡片上只放两个 chip，其余标签在悬浮面板里看。标签区固定一行高（.card .tags），
+ * 卡片高度因此恒定（= .grid 的 --grid-row），虚拟列表按行高算滚动位置才准。
  */
 const shownTags = computed(() => (props.item.tags ?? []).slice(0, 2));
-const hiddenTags = computed(() => (props.item.tags?.length ?? 0) - shownTags.value.length);
 
 async function draw(): Promise<void> {
   failed.value = false;
@@ -70,7 +68,6 @@ watch(() => props.item.kind, draw);
     <span v-if="item.readonly" class="builtin-flag">{{ t("card.builtin") }}</span>
     <div class="tags">
       <TagCapsule v-for="tag in shownTags" :key="tag" :tag="tag"/>
-      <span v-if="hiddenTags" class="tag-more">+{{ hiddenTags }}</span>
       <span v-if="!item.tags || !item.tags.length" class="tag-empty">{{ short }}</span>
     </div>
     <span class="meta">{{ label }} · {{ item.width }}×{{ item.height }}</span>
@@ -90,10 +87,10 @@ watch(() => props.item.kind, draw);
   border-radius: var(--radius-md);
   background: var(--paper);
   transition: transform .15s, border-color .15s, box-shadow .15s;
-  /* 高度必须恒定（缩略图 112 + 两行标签 46 + 一行信息 + 上下内边距 = 212，即 .grid 的 --grid-row）：
+  /* 高度必须恒定（缩略图 112 + 一行标签 22 + 一行信息 + 上下内边距 = 188，即 .grid 的 --grid-row）：
    虚拟化按 --grid-row 算位置，行高一旦随内容漂移，滚动位置就会和渲染窗口对不上。 */
   content-visibility: auto;
-  contain-intrinsic-size: auto 212px;
+  contain-intrinsic-size: auto 188px;
 }
 
 .card:hover { transform: translateY(-2px); border-color: var(--line-strong); box-shadow: var(--shadow-pop); }
@@ -117,25 +114,14 @@ watch(() => props.item.kind, draw);
 /* 披风贴图矮（32 高），给它居中；高度仍与皮肤卡一致，行高才统一 */
 .card.cape .thumb { align-items: center; }
 
-/* 标签区高度固定：卡片上最多两个 chip（超过就换成 +N），剩下的进悬浮面板。
-   width: 100% 是必须的：否则这个 wrap 容器会缩到内容宽度，百分比上限跟着缩，
+/* 标签区只占一行：最多两个 chip，其余标签在悬浮面板里看。
+   width: 100% 是必须的：否则这个容器会缩到内容宽度，百分比上限跟着缩，
    两个短标签也会被截成「官…」。 */
 .card .tags {
   width: 100%;
+  height: 22px;
   justify-content: center;
-  align-content: flex-start;
-  height: 46px;
   overflow: hidden;
-}
-
-.card .tag-more {
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--paper-soft);
-  color: var(--ink-faint);
-  font-size: 10.5px;
-  line-height: 1.6;
-  white-space: nowrap;
 }
 
 .card .meta {
@@ -147,8 +133,6 @@ watch(() => props.item.kind, draw);
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-.card .tags { justify-content: center; }
 
 .fav-btn, .edit-btn {
   position: absolute;

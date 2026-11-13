@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"net/http"
 
+	"scoped-skin/core"
 	"scoped-skin/httpx"
 )
 
@@ -78,7 +79,7 @@ func (s *Server) handleAuthenticate(w http.ResponseWriter, r *http.Request) {
 	user := s.App.VerifyCredentials(payload.Username, payload.Password)
 	if user == nil {
 		s.App.Audit.Write("login", ip, map[string]any{
-			"username": payload.Username,
+			"username": core.Clip(payload.Username, core.AuditNameLimit),
 			"result":   "denied",
 		})
 		forbidden(w, errInvalidCredentials)
@@ -195,7 +196,7 @@ func (s *Server) handleSignout(w http.ResponseWriter, r *http.Request) {
 	user := s.App.VerifyCredentials(payload.Username, payload.Password)
 	if user == nil {
 		s.App.Audit.Write("login", ip, map[string]any{
-			"username": payload.Username,
+			"username": core.Clip(payload.Username, core.AuditNameLimit),
 			"result":   "denied",
 		})
 		forbidden(w, errInvalidCredentials)

@@ -7,7 +7,8 @@ import { getLocale } from "@/i18n";
 import type { Player } from "@/types";
 
 const TOKEN_KEY = "sms.token";
-const USER_KEY = "sms.user";
+// 缓存的是接口原样的 player 快照：字段格式变了就换 key，旧值直接作废（不做迁移）。
+const PLAYER_KEY = "sms.player.v1";
 
 export function getToken(): string {
   try {
@@ -20,7 +21,7 @@ export function getToken(): string {
 export function setToken(token: string, player?: Player | null): void {
   try {
     localStorage.setItem(TOKEN_KEY, token);
-    if (player) localStorage.setItem(USER_KEY, JSON.stringify(player));
+    if (player) localStorage.setItem(PLAYER_KEY, JSON.stringify(player));
   } catch {
     /* 隐私模式下 localStorage 可能不可写，忽略 */
   }
@@ -28,7 +29,7 @@ export function setToken(token: string, player?: Player | null): void {
 
 export function getUser(): Player | null {
   try {
-    return JSON.parse(localStorage.getItem(USER_KEY) || "null");
+    return JSON.parse(localStorage.getItem(PLAYER_KEY) || "null");
   } catch {
     return null;
   }
@@ -37,7 +38,7 @@ export function getUser(): Player | null {
 function clearToken(): void {
   try {
     localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(PLAYER_KEY);
   } catch {
     /* 同上 */
   }

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"scoped-skin/core"
 	"scoped-skin/db"
 	"scoped-skin/httpx"
 )
@@ -104,7 +105,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	user := s.App.VerifyCredentials(payload.Username, payload.Password)
 	if user == nil {
 		s.App.Audit.Write("login", ip, map[string]any{
-			"username": payload.Username,
+			"username": core.Clip(payload.Username, core.AuditNameLimit),
 			"result":   "denied",
 		})
 		unauthorized(w, r, "auth.login.failed")

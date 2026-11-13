@@ -14,7 +14,7 @@ const color = computed(() => tagColor(props.tag));
 </template>
 
 <style scoped>
-.card .tags .tag { max-width: 48%; overflow: hidden; text-overflow: ellipsis; }
+.card .tags .tag { max-width: 46%; overflow: hidden; text-overflow: ellipsis; }
 
 .tag {
   padding: 2px 9px;

@@ -37,7 +37,7 @@ const gridRef = ref<HTMLElement | null>(null);
 const gridScroll = ref(0); // 滚动位置
 const gridViewport = ref(0); // 视口高度
 const gridColumns = ref(1); // 列数
-const gridRowHeight = ref(212); // 一行占的高度（卡片 + 行距）
+const gridRowHeight = ref(188); // 一行占的高度（卡片 + 行距）
 const gridGap = ref(9); // 行距：spacer 的最后一行的间距不该算进去
 
 const gridWindow = computed(() => {
@@ -64,7 +64,7 @@ function measureGrid(): void {
   if (!element) return;
   const css = getComputedStyle(element);
   gridRowHeight.value =
-  (parseFloat(css.getPropertyValue("--grid-row")) || 212) +
+  (parseFloat(css.getPropertyValue("--grid-row")) || 188) +
   (parseFloat(css.getPropertyValue("--grid-gap")) || 9);
   gridGap.value = parseFloat(css.getPropertyValue("--grid-gap")) || 9;
   gridViewport.value = element.clientHeight;
@@ -419,7 +419,7 @@ onBeforeUnmount(() => {
   --grid-card: 123px;
   --grid-gap: 9px;
   /* 行高（= 卡片高度）恒定，虚拟化就拿它做「第几行 ↔ 滚到哪」的换算，不用测量、不用前缀和 */
-  --grid-row: 212px;
+  --grid-row: 188px;
 
   flex: 1 1 auto;
   min-height: 0;

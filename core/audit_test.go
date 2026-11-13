@@ -36,6 +36,25 @@ func captureLog(t *testing.T) func() []map[string]any {
 	}
 }
 
+// Clip 是审计字段的长度闸门：刚好到上限不截，超一个字就截断并留「…」。
+func TestClipKeepsShortValuesAndMarksTruncation(t *testing.T) {
+	limit := core.AuditNameLimit
+	if got := core.Clip("steve", limit); got != "steve" {
+		t.Errorf("短值被改了: %q", got)
+	}
+	if got := core.Clip(strings.Repeat("a", limit), limit); got != strings.Repeat("a", limit) {
+		t.Errorf("刚好到上限不该截: %q", got)
+	}
+	got := core.Clip(strings.Repeat("a", limit+1), limit)
+	if want := strings.Repeat("a", limit) + "…"; got != want {
+		t.Errorf("超长值 = %q，想要 %q", got, want)
+	}
+	// 按字符数截，不按字节：中文按 3 字节算，截断不能切开一个字
+	if got := core.Clip(strings.Repeat("长", limit+5), limit); len([]rune(got)) != limit+1 {
+		t.Errorf("中文截断后 = %d 个字符，想要 %d", len([]rune(got)), limit+1)
+	}
+}
+
 // 不用 t.Parallel：captureLog 会改全局的 slog 默认 handler，并行跑会互相串台。
 func TestAuditWritesStructuredRecords(t *testing.T) {
 	read := captureLog(t)

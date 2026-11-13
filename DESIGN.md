@@ -193,7 +193,7 @@ flowchart LR
 
 ### 3.6. /api/*
 
-除上述定义以外的其他 API 端口，通常服务于特定的应用功能，无需详细了解。除 `login` 外，都需要 `Authorization: Bearer <token>`，否则 `401`；其中 `/api/admin/*` 还要求 `role = admin`，否则 `403`。（`/api/assets/*` 不在此列：它是 [3.4](#34-apiassetsasset_id) 的贴图字节，公开只读、不鉴权。）
+除上述定义以外的其他 API 端口，通常服务于特定的应用功能，无需详细了解。`POST /api/auth` 用账号密码换 token，是这里唯一不需要 Bearer 的接口；其余都要 `Authorization: Bearer <token>`，否则 `401`；其中 `/api/admin/*` 还要求 `role = admin`，否则 `403`。（`/api/assets/*` 不在此列：它是 [3.4](#34-apiassetsasset_id) 的贴图字节，公开只读、不鉴权。）接口 JSON 的字段名统一用 camelCase（Yggdrasil 的接口按规范本身就是 camelCase）。
 
 返回里所有用户可见的文案（错误 `detail`）按请求的 `Accept-Language` 本地化（见 [2.4 语言](#24-语言)）。
 
@@ -206,7 +206,7 @@ flowchart LR
 | POST   | `/api/precheck`                  | Bearer       | 上传前预检：请求体 `{kind, data}`（`data` 是原图 base64），服务端校验并算 `asset_id` |
 | POST   | `/api/skins`                     | Bearer       | 上传贴图（multipart：`file` / `kind` / `tags`），或覆盖已有贴图的标签与 kind         |
 | POST   | `/api/items/{asset_id}/favorite` | Bearer       | 切换收藏                                                                             |
-| GET    | `/api/items/{asset_id}/users`    | Bearer admin | 谁在穿这张贴图（删除前提示用）：`[{uuid, playerName, slot}]`                        |
+| GET    | `/api/items/{asset_id}/users`    | Bearer admin | 谁在穿这张贴图（删除前提示用）：`{"users": [{uuid, playerName, slot}]}`             |
 | DELETE | `/api/items/{asset_id}`          | Bearer       | 删除贴图（只读资源不可删，会清掉使用者的装备）                                       |
 | GET    | `/api/me`                        | Bearer       | 当前账号 + 装备中的皮肤 / 披风                                                       |
 | POST   | `/api/me/equip`                  | Bearer       | 装备某个贴图                                                                         |
@@ -247,7 +247,7 @@ flowchart LR
 
 ## 4. 数据库
 
-本项目采用单个 SQLite 数据库存储所有数据，无外键约束设计，业务逻辑由代码保证。
+本项目采用单个 SQLite 数据库存储所有数据，无外键约束设计，业务逻辑由代码保证。库开着 WAL 与 `synchronous(FULL)`：每次提交都刷 WAL，掉电也不丢已提交的事务，代价是每次提交多一次 fsync —— 写入都是人的操作频率，可以接受。连接池上限 1 条，进程内再用互斥锁串行化，`busy_timeout` 5 秒。
 
 库文件里的表结构与代码里的建表语句不一致时（多一列、少一列、类型变了）启动直接失败：不做迁移、也不清库重建，删掉 `DATA_DIR` 下的 `app.db`（含 `-wal` / `-shm`）重启即可。
 
@@ -394,6 +394,8 @@ flowchart LR
 | `user.delete`  | `actor`、`uuid`、`username`                                                          |
 | `asset.upload` | `actor`、`asset_id`、`kind`、`size`、`result`（`created` / `updated` / `unchanged`） |
 | `asset.delete` | `actor`、`asset_id`                                                                  |
+
+审计字段名用 snake_case（与 [3.6](#36-api) 的接口 JSON 不同）：它要能和数据库列名、日志检索对得上。请求方自报的 `username` 超过 64 个字符时截断并以 `…` 结尾，免得一条请求把日志撑爆。
 
 ### 5.5. 源 IP 与反向代理
 

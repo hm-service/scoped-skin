@@ -25,7 +25,7 @@ export default defineConfig({
   // 开发时页面由 Vite 自己出，接口仍打 Go（just run 起 8080）：改前端不用重新编译二进制。
   server: {
     proxy: Object.fromEntries(
-      ['/api', '/asset', '/livez', '/readyz'].map((path) => [path, 'http://127.0.0.1:8080']),
+      ['/api', '/livez', '/readyz'].map((path) => [path, 'http://127.0.0.1:8080']),
     ),
   },
 })

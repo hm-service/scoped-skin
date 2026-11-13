@@ -17,13 +17,6 @@ type Server struct {
 	App *app.App
 }
 
-// Limits 是三个并发闸门的槽位数：认证单独一组、其余 API 一组、静态文件一组。
-type Limits struct {
-	Auth   int
-	API    int
-	Static int
-}
-
 // 默认槽位数：认证那一半压得比业务低一档（每次校验吃 19 MiB 的 Argon2id），
 // 静态那一半只防止一次页面加载把内嵌文件同时读爆。
 const (

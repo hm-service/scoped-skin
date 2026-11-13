@@ -920,6 +920,36 @@ func TestTagLimits(t *testing.T) {
 	}
 }
 
+// 失败的登录会把请求方给的名字原样记进审计 —— 但必须有长度上限，
+// 否则一条 1 MiB 的 username 就是一行 1 MiB 的日志（认证端点公开、不限流）。
+func TestFailedLoginAuditClipsUsername(t *testing.T) {
+	_, handler := newSite(t)
+	read := captureLogs(t)
+
+	recorder := testenv.Do(handler, http.MethodPost, "/api/auth",
+		map[string]any{"username": strings.Repeat("a", 900*1024), "password": "wrong_password_123"}, "")
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("超长 username 的状态码 = %d，想要 401", recorder.Code)
+	}
+
+	var record map[string]any
+	for _, entry := range read() {
+		if entry["event"] == "login" {
+			record = entry
+		}
+	}
+	if record == nil {
+		t.Fatal("没有 login 审计记录")
+	}
+	name, _ := record["username"].(string)
+	if got, want := len([]rune(name)), core.AuditNameLimit+1; got != want {
+		t.Fatalf("审计里的 username 是 %d 个字符，想要 %d（截断后加省略号）", got, want)
+	}
+	if !strings.HasSuffix(name, "…") {
+		t.Errorf("审计里的 username 没有截断标记: %.20q…", name)
+	}
+}
+
 // 上传与删除贴图要留审计，带上操作者 uuid。
 func TestAssetChangesAreAudited(t *testing.T) {
 	instance, handler := newSite(t)
@@ -957,15 +987,19 @@ func TestAssetChangesAreAudited(t *testing.T) {
 	if !ok {
 		t.Fatalf("没有 asset.upload 审计记录: %v", events)
 	}
-	if upload["actor"] != admin.UUID || upload["assetId"] != uploaded.ID ||
+	if upload["actor"] != admin.UUID || upload["asset_id"] != uploaded.ID ||
 		upload["kind"] != "skin.steve" || upload["result"] != "created" {
 		t.Errorf("asset.upload 内容不对: %v", upload)
+	}
+	// 审计字段名是既有契约（snake_case，对齐数据库列名），不跟接口 JSON 的 camelCase 走
+	if _, ok := upload["assetId"]; ok {
+		t.Errorf("asset.upload 用了 camelCase 字段名: %v", upload)
 	}
 	removed, ok := events["asset.delete"]
 	if !ok {
 		t.Fatalf("没有 asset.delete 审计记录: %v", events)
 	}
-	if removed["actor"] != admin.UUID || removed["assetId"] != uploaded.ID {
+	if removed["actor"] != admin.UUID || removed["asset_id"] != uploaded.ID {
 		t.Errorf("asset.delete 内容不对: %v", removed)
 	}
 }
