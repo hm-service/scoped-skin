@@ -19,7 +19,7 @@ const store = maintainStore;
       <form class="m-form" @submit.prevent="store.saveEdit()">
         <label class="field">
           <span>{{ t("field.player-name") }}</span>
-          <input v-model.trim="store.state.editing.player_name" type="text" minlength="3" maxlength="16"
+          <input v-model.trim="store.state.editing.playerName" type="text" minlength="3" maxlength="16"
                  spellcheck="false" :placeholder="t('user.player-name-hint')">
         </label>
         <label class="field">

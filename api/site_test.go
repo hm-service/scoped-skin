@@ -178,7 +178,7 @@ func builtinItem(t *testing.T, handler http.Handler, token, category string) map
 func TestLogin(t *testing.T) {
 	t.Run("正确凭据返回可用 token", func(t *testing.T) {
 		_, handler := newSite(t)
-		recorder := testenv.Do(handler, http.MethodPost, "/api/auth/login",
+		recorder := testenv.Do(handler, http.MethodPost, "/api/auth",
 			map[string]any{"username": "admin", "password": "admin123"}, "")
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("登录状态码 = %d，想要 200（%s）", recorder.Code, recorder.Body.String())
@@ -196,9 +196,9 @@ func TestLogin(t *testing.T) {
 			t.Error("响应里泄露了 password_hash")
 		}
 
-		session := testenv.Do(handler, http.MethodGet, "/api/auth/session", nil, token)
+		session := testenv.Do(handler, http.MethodGet, "/api/auth", nil, token)
 		if session.Code != http.StatusOK {
-			t.Fatalf("/api/auth/session 状态码 = %d，想要 200（%s）", session.Code, session.Body.String())
+			t.Fatalf("/api/auth 状态码 = %d，想要 200（%s）", session.Code, session.Body.String())
 		}
 		if object(t, testenv.Decode(t, session), "player")["username"] != "admin" {
 			t.Errorf("session 里的账号不对: %s", session.Body.String())
@@ -207,7 +207,7 @@ func TestLogin(t *testing.T) {
 
 	t.Run("密码错误文案精确", func(t *testing.T) {
 		_, handler := newSite(t)
-		recorder := testenv.Do(handler, http.MethodPost, "/api/auth/login",
+		recorder := testenv.Do(handler, http.MethodPost, "/api/auth",
 			map[string]any{"username": "admin", "password": "not-the-password"}, "")
 		if recorder.Code != http.StatusUnauthorized {
 			t.Fatalf("状态码 = %d，想要 401", recorder.Code)
@@ -224,7 +224,7 @@ func TestLogin(t *testing.T) {
 	t.Run("不限流", func(t *testing.T) {
 		_, handler := newSite(t)
 		for attempt := 1; attempt <= 6; attempt++ {
-			recorder := testenv.Do(handler, http.MethodPost, "/api/auth/login",
+			recorder := testenv.Do(handler, http.MethodPost, "/api/auth",
 				map[string]any{"username": "admin", "password": "wrong"}, "")
 			if recorder.Code != http.StatusUnauthorized {
 				t.Fatalf("第 %d 次登录状态码 = %d，想要 401（%s）",
@@ -240,7 +240,7 @@ func TestAuthGate(t *testing.T) {
 	guestToken := testenv.Token(t, instance, "guest")
 
 	t.Run("没有 token", func(t *testing.T) {
-		recorder := testenv.Do(handler, http.MethodGet, "/api/auth/session", nil, "")
+		recorder := testenv.Do(handler, http.MethodGet, "/api/auth", nil, "")
 		if recorder.Code != http.StatusUnauthorized {
 			t.Fatalf("状态码 = %d，想要 401", recorder.Code)
 		}
@@ -253,7 +253,7 @@ func TestAuthGate(t *testing.T) {
 	})
 
 	t.Run("token 不认识", func(t *testing.T) {
-		recorder := testenv.Do(handler, http.MethodGet, "/api/auth/session", nil, strings.Repeat("0", 64))
+		recorder := testenv.Do(handler, http.MethodGet, "/api/auth", nil, strings.Repeat("0", 64))
 		if recorder.Code != http.StatusUnauthorized {
 			t.Fatalf("状态码 = %d，想要 401", recorder.Code)
 		}
@@ -386,7 +386,7 @@ func TestPrecheckValidatesPayload(t *testing.T) {
 		t.Fatalf("预检状态码 = %d，想要 200（%s）", recorder.Code, recorder.Body.String())
 	}
 	payload := testenv.Decode(t, recorder)
-	assetID, _ := payload["asset_id"].(string)
+	assetID, _ := payload["assetId"].(string)
 	if payload["exists"] != false || len(assetID) != 64 {
 		t.Fatalf("exists/asset_id = %v/%q，想要 false/64 位 hex", payload["exists"], assetID)
 	}
@@ -505,7 +505,7 @@ func TestEquip(t *testing.T) {
 	assetID := firstItem(t, handler, token, "skin")["id"].(string)
 
 	recorder := testenv.Do(handler, http.MethodPost, "/api/me/equip",
-		map[string]any{"asset_id": assetID}, token)
+		map[string]any{"assetId": assetID}, token)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("装备状态码 = %d，想要 200（%s）", recorder.Code, recorder.Body.String())
 	}
@@ -523,7 +523,7 @@ func TestEquip(t *testing.T) {
 	}
 
 	recorder = testenv.Do(handler, http.MethodPost, "/api/me/equip",
-		map[string]any{"asset_id": strings.Repeat("f", 64)}, token)
+		map[string]any{"assetId": strings.Repeat("f", 64)}, token)
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("装备不存在贴图状态码 = %d，想要 404（%s）", recorder.Code, recorder.Body.String())
 	}
@@ -539,10 +539,10 @@ func TestAdminUsers(t *testing.T) {
 
 	// 新建 → 201，列表里能看到
 	recorder := testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
-		"username":    "tester",
-		"password":    "tester123",
-		"player_name": "tester",
-		"role":        "normal",
+		"username":   "tester",
+		"password":   "tester123",
+		"playerName": "tester",
+		"role":       "normal",
 	}, adminToken)
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("创建用户状态码 = %d，想要 201（%s）", recorder.Code, recorder.Body.String())
@@ -561,7 +561,7 @@ func TestAdminUsers(t *testing.T) {
 	for _, bad := range []string{"Tester", "test er", "测试", "test-er"} {
 		t.Run(bad, func(t *testing.T) {
 			recorder := testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
-				"username": bad, "password": "tester123", "player_name": "tester2", "role": "normal",
+				"username": bad, "password": "tester123", "playerName": "tester2", "role": "normal",
 			}, adminToken)
 			if recorder.Code != http.StatusBadRequest || detail(t, recorder) != "账号名只能是小写字母、数字、@、. 和 _" {
 				t.Errorf("账号名 %q = %d（%s）", bad, recorder.Code, recorder.Body.String())
@@ -572,11 +572,11 @@ func TestAdminUsers(t *testing.T) {
 	// 创建时可以指定 uuid：带横线的小写照收并归一成 32 位无横线小写
 	explicit := "0123456789abcdef0123456789abcdef"
 	recorder = testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
-		"username":    "anchored",
-		"password":    "anchor123",
-		"player_name": "anchored",
-		"role":        "normal",
-		"uuid":        "01234567-89ab-cdef-0123-456789abcdef",
+		"username":   "anchored",
+		"password":   "anchor123",
+		"playerName": "anchored",
+		"role":       "normal",
+		"uuid":       "01234567-89ab-cdef-0123-456789abcdef",
 	}, adminToken)
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("指定 uuid 创建 = %d（%s）", recorder.Code, recorder.Body.String())
@@ -586,7 +586,7 @@ func TestAdminUsers(t *testing.T) {
 	}
 	// 大写不收（前端会折成小写，后端严格）
 	recorder = testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
-		"username": "upperuuid", "password": "upper123", "player_name": "upperuuid",
+		"username": "upperuuid", "password": "upper123", "playerName": "upperuuid",
 		"uuid": "01234567-89AB-CDEF-0123-456789ABCDEF",
 	}, adminToken)
 	if recorder.Code != http.StatusBadRequest || detail(t, recorder) != "UUID 必须是 32 位小写十六进制字符" {
@@ -594,7 +594,7 @@ func TestAdminUsers(t *testing.T) {
 	}
 	// 非法 uuid → 400，文案跟着语言走
 	recorder = testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
-		"username": "baduuid", "password": "baduuid12", "player_name": "baduuid", "uuid": "not-a-uuid",
+		"username": "baduuid", "password": "baduuid12", "playerName": "baduuid", "uuid": "not-a-uuid",
 	}, adminToken)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("非法 uuid = %d（%s）", recorder.Code, recorder.Body.String())
@@ -604,7 +604,7 @@ func TestAdminUsers(t *testing.T) {
 	}
 	// uuid 撞车 → 409
 	recorder = testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
-		"username": "clash", "password": "clash123", "player_name": "clash", "uuid": explicit,
+		"username": "clash", "password": "clash123", "playerName": "clash", "uuid": explicit,
 	}, adminToken)
 	if recorder.Code != http.StatusConflict {
 		t.Fatalf("uuid 撞车 = %d（%s）", recorder.Code, recorder.Body.String())
@@ -634,12 +634,12 @@ func TestAdminUsers(t *testing.T) {
 	if object(t, testenv.Decode(t, recorder), "user")["username"] != "tester2" {
 		t.Errorf("改完的账号名不对: %s", recorder.Body.String())
 	}
-	recorder = testenv.Do(handler, http.MethodGet, "/api/auth/session", nil, oldToken)
+	recorder = testenv.Do(handler, http.MethodGet, "/api/auth", nil, oldToken)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("旧凭据状态码 = %d，想要 200", recorder.Code)
 	}
 	newToken := testenv.Token(t, instance, "tester2")
-	if recorder = testenv.Do(handler, http.MethodGet, "/api/auth/session", nil, newToken); recorder.Code != http.StatusOK {
+	if recorder = testenv.Do(handler, http.MethodGet, "/api/auth", nil, newToken); recorder.Code != http.StatusOK {
 		t.Fatalf("新 token 状态码 = %d，想要 200", recorder.Code)
 	}
 
@@ -660,7 +660,7 @@ func TestAdminUsers(t *testing.T) {
 	if testenv.Decode(t, recorder)["deleted"] != uuid {
 		t.Errorf("deleted = %v，想要 %s", testenv.Decode(t, recorder)["deleted"], uuid)
 	}
-	if recorder = testenv.Do(handler, http.MethodGet, "/api/auth/session", nil, newToken); recorder.Code != http.StatusUnauthorized {
+	if recorder = testenv.Do(handler, http.MethodGet, "/api/auth", nil, newToken); recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("被删用户的 token 状态码 = %d，想要 401", recorder.Code)
 	}
 }
@@ -771,7 +771,7 @@ func TestLanguageNegotiation(t *testing.T) {
 	// 账号字段校验：core 抛的是文案键，参数里还嵌着「字段名」这个键，两层都要翻译
 	steveUUID := core.OfflineUUID("steve")
 	recorder = call(http.MethodPatch, "/api/admin/users/"+steveUUID, "en",
-		map[string]any{"player_name": "Bad!"}, token)
+		map[string]any{"playerName": "Bad!"}, token)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("非法游戏内名称 = %d（%s）", recorder.Code, recorder.Body.String())
 	}
@@ -779,7 +779,7 @@ func TestLanguageNegotiation(t *testing.T) {
 		t.Errorf("en 校验文案 = %q", got)
 	}
 	recorder = call(http.MethodPatch, "/api/admin/users/"+steveUUID, "zh-Hans",
-		map[string]any{"player_name": "Bad!"}, token)
+		map[string]any{"playerName": "Bad!"}, token)
 	if got := detail(t, recorder); got != "游戏内名称只能是大小写字母、数字或下划线，长度 3-16" {
 		t.Errorf("zh 校验文案 = %q", got)
 	}
@@ -957,7 +957,7 @@ func TestAssetChangesAreAudited(t *testing.T) {
 	if !ok {
 		t.Fatalf("没有 asset.upload 审计记录: %v", events)
 	}
-	if upload["actor"] != admin.UUID || upload["asset_id"] != uploaded.ID ||
+	if upload["actor"] != admin.UUID || upload["assetId"] != uploaded.ID ||
 		upload["kind"] != "skin.steve" || upload["result"] != "created" {
 		t.Errorf("asset.upload 内容不对: %v", upload)
 	}
@@ -965,7 +965,7 @@ func TestAssetChangesAreAudited(t *testing.T) {
 	if !ok {
 		t.Fatalf("没有 asset.delete 审计记录: %v", events)
 	}
-	if removed["actor"] != admin.UUID || removed["asset_id"] != uploaded.ID {
+	if removed["actor"] != admin.UUID || removed["assetId"] != uploaded.ID {
 		t.Errorf("asset.delete 内容不对: %v", removed)
 	}
 }

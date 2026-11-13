@@ -54,7 +54,7 @@ onBeforeUnmount(() => {
   viewerRef.current = null;
 });
 
-watch(() => [store.stageSkin?.texture_url, store.stageSkin?.kind], loadSkin);
+watch(() => [store.stageSkin?.textureUrl, store.stageSkin?.kind], loadSkin);
 watch(() => store.stageCapeUrl, loadCape);
 watch(() => store.stageBackEquipment, (equipment) => viewerRef.current?.setBackEquipment(equipment));
 watch(() => store.state.view.animation, (key) => viewerRef.current?.setAnimation(key));

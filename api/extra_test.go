@@ -36,7 +36,7 @@ func TestUnauthenticatedRoutesRequireToken(t *testing.T) {
 	}{
 		{http.MethodGet, "/api/tags", nil},
 		{http.MethodGet, "/api/me", nil},
-		{http.MethodPost, "/api/me/equip", map[string]any{"asset_id": "x"}},
+		{http.MethodPost, "/api/me/equip", map[string]any{"assetId": "x"}},
 		{http.MethodPost, "/api/skins", nil},
 		{http.MethodGet, "/api/admin/users", nil},
 		{http.MethodPost, "/api/admin/users", map[string]any{}},
@@ -70,7 +70,7 @@ func TestMalformedJSONBodies(t *testing.T) {
 		method, path string
 		token        string
 	}{
-		{http.MethodPost, "/api/auth/login", ""},
+		{http.MethodPost, "/api/auth", ""},
 		{http.MethodPost, "/api/precheck", token},
 		{http.MethodPost, "/api/me/equip", token},
 		{http.MethodPost, "/api/admin/users", token},
@@ -217,7 +217,7 @@ func TestAssetUsersEndpoint(t *testing.T) {
 
 	// steve 装备上之后，名单里应当有他，并且标出是 skin 那一列
 	if recorder := testenv.Do(handler, http.MethodPost, "/api/me/equip",
-		map[string]any{"asset_id": assetID}, steveToken); recorder.Code != http.StatusOK {
+		map[string]any{"assetId": assetID}, steveToken); recorder.Code != http.StatusOK {
 		t.Fatalf("装备状态码 = %d（%s）", recorder.Code, recorder.Body.String())
 	}
 	recorder = testenv.Do(handler, http.MethodGet, "/api/items/"+assetID+"/users", nil, adminToken)
@@ -226,7 +226,7 @@ func TestAssetUsersEndpoint(t *testing.T) {
 		t.Fatalf("名单 = %v，想要 1 条", users)
 	}
 	first, _ := users[0].(map[string]any)
-	if first["player_name"] != "steve" || first["slot"] != "skin" {
+	if first["playerName"] != "steve" || first["slot"] != "skin" {
 		t.Errorf("名单内容 = %v，想要 steve / skin", first)
 	}
 

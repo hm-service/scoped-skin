@@ -186,7 +186,7 @@ func TestRootHandlerGivesEachRouteGroupItsOwnGate(t *testing.T) {
 	}{
 		"存活探针不设闸门":   {"/livez", http.StatusOK},
 		"就绪探针有自己的槽位": {"/readyz", http.StatusOK},
-		"认证那半有自己的槽位": {"/api/auth/session", http.StatusUnauthorized},
+		"认证那半有自己的槽位": {"/api/auth", http.StatusUnauthorized},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if recorder := testenv.Do(handler, http.MethodGet, item.target, nil, ""); recorder.Code != item.want {
@@ -212,8 +212,8 @@ func TestRootHandlerKeepsAuthGateSeparate(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 
-	if recorder := testenv.Do(handler, http.MethodGet, "/api/auth/session", nil, ""); recorder.Code != http.StatusUnauthorized {
-		t.Fatalf("/api/auth/session = %d，想要 401（认证那半不该被业务闸门挡住）", recorder.Code)
+	if recorder := testenv.Do(handler, http.MethodGet, "/api/auth", nil, ""); recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("/api/auth = %d，想要 401（认证那半不该被业务闸门挡住）", recorder.Code)
 	}
 }
 

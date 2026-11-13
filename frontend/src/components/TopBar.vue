@@ -13,7 +13,7 @@ import { store } from "@/store";
     <span class="chip">{{ store.statsText }}</span>
     <span v-if="store.state.player" class="chip chip-user"
           :title="'UUID ' + store.state.player.uuid">
-      {{ store.state.player.player_name }} · {{ store.state.player.username }}
+      {{ store.state.player.playerName }} · {{ store.state.player.username }}
       <b class="role-flag" :class="store.role">{{ store.roleLabel }}</b>
     </span>
     <a v-if="store.state.player?.role === 'admin'" class="icon-btn" href="/maintain"

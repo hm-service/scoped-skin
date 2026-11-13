@@ -231,10 +231,10 @@ export class Preview3D {
     this.viewer.camera.position.sub(excess);
   }
 
-  /** @param {{texture_url: string, kind: string}} skin */
-  setSkin(skin: { texture_url: string; kind: Kind }): Promise<void> {
+  /** @param {{textureUrl: string, kind: string}} skin */
+  setSkin(skin: { textureUrl: string; kind: Kind }): Promise<void> {
     return this.viewer
-      .loadSkin(skin.texture_url, { model: MODEL_TYPES[skin.kind] })
+      .loadSkin(skin.textureUrl, { model: MODEL_TYPES[skin.kind] })
       .then(() => this.applyLayers()) // loadSkin 会把 visible 重置为 true，这里补回来
       .catch(() => {
         this.onError(t("error.skin-texture"));

@@ -22,14 +22,11 @@ const label = computed(() => modelShort(props.item));
 const short = computed(() => shortId(props.item));
 
 /**
- * 卡片上最多放四个 chip（两行），超出的进悬浮面板。
- * 四个以内全显示；四个以上只显示前三个 + 「+N」，这样无论多少标签都是两行 —— 卡片高度
+ * 卡片上最多放两个 chip，超出的进悬浮面板。
+ * 无论多少标签都只占一行，其余用「+N」带过 —— 标签区高度固定（.card .tags），卡片高度
  * 恒定（= .grid 的 --grid-row），虚拟列表按行高算滚动位置才准。
  */
-const shownTags = computed(() => {
-  const tags = props.item.tags ?? [];
-  return tags.length > 4 ? tags.slice(0, 3) : tags;
-});
+const shownTags = computed(() => (props.item.tags ?? []).slice(0, 2));
 const hiddenTags = computed(() => (props.item.tags?.length ?? 0) - shownTags.value.length);
 
 async function draw(): Promise<void> {
@@ -120,7 +117,7 @@ watch(() => props.item.kind, draw);
 /* 披风贴图矮（32 高），给它居中；高度仍与皮肤卡一致，行高才统一 */
 .card.cape .thumb { align-items: center; }
 
-/* 标签区固定两行：卡片上最多四个 chip（超过就换成 +N），剩下的进悬浮面板。
+/* 标签区高度固定：卡片上最多两个 chip（超过就换成 +N），剩下的进悬浮面板。
    width: 100% 是必须的：否则这个 wrap 容器会缩到内容宽度，百分比上限跟着缩，
    两个短标签也会被截成「官…」。 */
 .card .tags {

@@ -177,9 +177,9 @@ func (s *Server) handlePrecheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.Write(w, http.StatusOK, map[string]any{
-		"asset_id": digest,
-		"exists":   item != nil,
-		"item":     item,
+		"assetId": digest,
+		"exists":  item != nil,
+		"item":    item,
 	})
 }
 
@@ -237,11 +237,11 @@ func (s *Server) handleUploadSkin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.App.Audit.Write("asset.upload", s.App.ClientIP(r), map[string]any{
-		"actor":    user.UUID,
-		"asset_id": item.ID,
-		"kind":     item.Kind,
-		"size":     item.Size,
-		"result":   status,
+		"actor":   user.UUID,
+		"assetId": item.ID,
+		"kind":    item.Kind,
+		"size":    item.Size,
+		"result":  status,
 	})
 	httpx.Write(w, http.StatusCreated, itemWithStatus{
 		Item:    item,
@@ -322,8 +322,8 @@ func (s *Server) handleDeleteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.App.Audit.Write("asset.delete", s.App.ClientIP(r), map[string]any{
-		"actor":    admin.UUID,
-		"asset_id": assetID,
+		"actor":   admin.UUID,
+		"assetId": assetID,
 	})
 	stats, err := s.App.Store.Stats(admin.UUID)
 	if err != nil {

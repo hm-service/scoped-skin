@@ -25,7 +25,7 @@ export type BackEquipment = "cape" | "elytra" | null;
 export interface Player {
   uuid: string;
   role: Role;
-  player_name: string;
+  playerName: string;
   username: string;
   skin: string;
   cape: string;
@@ -37,13 +37,13 @@ export interface Item {
   kind: Kind;
   category: Category;
   tags: string[];
-  upload_at: number;
+  uploadAt: number;
   readonly: boolean;
   width: number;
   height: number;
   size: number;
   favorite: boolean;
-  texture_url: string;
+  textureUrl: string;
 }
 
 export interface TagCount {
@@ -60,7 +60,7 @@ export interface Stats {
 /** 「谁在穿这张贴图」的一条记录（删资源前给管理员看的）。 */
 export interface AssetUser {
   uuid: string;
-  player_name: string;
+  playerName: string;
   slot: Category;
 }
 
@@ -87,7 +87,7 @@ export interface LibraryResponse {
 }
 
 export interface PrecheckResponse {
-  asset_id: string;
+  assetId: string;
   exists: boolean;
   item: Item | null;
 }

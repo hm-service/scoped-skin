@@ -4,7 +4,7 @@ package db
 type User struct {
 	UUID         string `json:"uuid"`
 	Role         string `json:"role"`
-	PlayerName   string `json:"player_name"`
+	PlayerName   string `json:"playerName"`
 	Username     string `json:"username"`
 	PasswordHash string `json:"-"`
 	Skin         string `json:"skin"`
@@ -17,7 +17,7 @@ type User struct {
 // 所以一张贴图在同一行里占不了两格。
 type AssetUser struct {
 	UUID       string `json:"uuid"`
-	PlayerName string `json:"player_name"`
+	PlayerName string `json:"playerName"`
 	Slot       string `json:"slot"`
 }
 
@@ -30,13 +30,13 @@ type Item struct {
 	Kind       string   `json:"kind"`
 	Category   string   `json:"category"`
 	Tags       []string `json:"tags"`
-	UploadAt   int64    `json:"upload_at"`
+	UploadAt   int64    `json:"uploadAt"`
 	Readonly   bool     `json:"readonly"`
 	Width      int      `json:"width"`
 	Height     int      `json:"height"`
 	Size       int      `json:"size"`
 	Favorite   bool     `json:"favorite"`
-	TextureURL string   `json:"texture_url"`
+	TextureURL string   `json:"textureUrl"`
 }
 
 type TagCount struct {

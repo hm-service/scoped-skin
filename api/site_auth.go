@@ -11,11 +11,11 @@ import (
 )
 
 // userView 是站点 API 回给前端的账号信息：uuid / role /
-// player_name / username / skin / cape —— 绝不带 password_hash。
+// playerName / username / skin / cape —— 绝不带 password_hash。
 type userView struct {
 	UUID       string `json:"uuid"`
 	Role       string `json:"role"`
-	PlayerName string `json:"player_name"`
+	PlayerName string `json:"playerName"`
 	Username   string `json:"username"`
 	Skin       string `json:"skin"`
 	Cape       string `json:"cape"`

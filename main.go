@@ -109,7 +109,7 @@ func validHostname(host string) bool {
 	if len(host) > 253 {
 		return false
 	}
-	for _, label := range strings.Split(host, ".") {
+	for label := range strings.SplitSeq(host, ".") {
 		if len(label) == 0 || len(label) > 63 {
 			return false
 		}
@@ -182,7 +182,7 @@ func newRootHandler(instance *app.App, files fs.FS, limits concurrencyLimits) ht
 	root := http.NewServeMux()
 	// 认证单独一组：它被打满不该把业务请求挤在后面；/readyz 自己一组、只给几个槽位；
 	// /livez 不设闸门 —— 只要进程活着就必须能回 200。新增的接口只要落在 /api/ 下就自动被认领。
-	root.Handle("/api/auth/", api.Concurrency(limits.auth, routes))
+	root.Handle("/api/auth", api.Concurrency(limits.auth, routes))
 	root.Handle("/api/", api.Concurrency(limits.api, routes))
 	root.Handle("/readyz", api.Concurrency(api.ReadyzConcurrency, routes))
 	root.Handle("/livez", routes)

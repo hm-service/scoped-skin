@@ -106,8 +106,8 @@ func NewMux(instance *app.App) *http.ServeMux {
 
 		{http.MethodGet, "/api/assets/{asset_id}", server.handleAsset},
 
-		{http.MethodPost, "/api/auth/login", server.handleLogin},
-		{http.MethodGet, "/api/auth/session", server.handleSession},
+		{http.MethodPost, "/api/auth", server.handleLogin},
+		{http.MethodGet, "/api/auth", server.handleSession},
 		{http.MethodGet, "/api/tags", server.handleTags},
 		{http.MethodGet, "/api/library", server.handleLibrary},
 		{http.MethodPost, "/api/precheck", server.handlePrecheck},

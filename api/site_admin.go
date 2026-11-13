@@ -71,7 +71,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		Username   string  `json:"username"`
 		Password   string  `json:"password"`
-		PlayerName string  `json:"player_name"`
+		PlayerName string  `json:"playerName"`
 		Role       *string `json:"role"`
 		UUID       string  `json:"uuid"` // 可省略；留空则按离线规则从游戏内名称推导
 	}
@@ -128,7 +128,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		UUID       *string `json:"uuid"`
 		Username   *string `json:"username"`
 		Password   *string `json:"password"`
-		PlayerName *string `json:"player_name"`
+		PlayerName *string `json:"playerName"`
 		Role       *string `json:"role"`
 	}
 	if !decodeJSON(w, r, &payload) {

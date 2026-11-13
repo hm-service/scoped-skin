@@ -9,9 +9,9 @@ data:
     TZ: "Asia/Shanghai"
     DATA_DIR: "/data"
     TRUSTED_PROXIES: "127.0.0.1/32,::1/128"
-    MAX_API_CONCURRENCY: 128
-    MAX_AUTH_CONCURRENCY: 32
-    MAX_STATIC_CONCURRENCY: 64
+    MAX_API_CONCURRENCY: "128"
+    MAX_AUTH_CONCURRENCY: "32"
+    MAX_STATIC_CONCURRENCY: "64"
     GOMEMLIMIT: "128MiB"
 
 ---
@@ -98,7 +98,6 @@ spec:
           volumeMounts:
               - name: data
                 mountPath: /data
-
     volumes:
         - name: data
           persistentVolumeClaim:

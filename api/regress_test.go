@@ -69,7 +69,7 @@ func TestAdminRoutesRejectNonAdmin(t *testing.T) {
 			}{
 				{http.MethodGet, "/api/admin/users", nil},
 				{http.MethodPost, "/api/admin/users", map[string]any{
-					"username": "sneaky", "password": "sneaky123", "player_name": "sneaky",
+					"username": "sneaky", "password": "sneaky123", "playerName": "sneaky",
 				}},
 				{http.MethodPatch, "/api/admin/users/" + core.OfflineUUID("steve"),
 					map[string]any{"role": "guest"}},
@@ -97,7 +97,7 @@ func TestAdminCreateUserConflictAndValidation(t *testing.T) {
 
 	// 账号名与已有账号撞了 → 409
 	recorder := testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
-		"username": "steve", "password": "steve123", "player_name": "steve2",
+		"username": "steve", "password": "steve123", "playerName": "steve2",
 	}, token)
 	if recorder.Code != http.StatusConflict {
 		t.Fatalf("重名账号状态码 = %d，想要 409（%s）", recorder.Code, recorder.Body.String())
@@ -108,7 +108,7 @@ func TestAdminCreateUserConflictAndValidation(t *testing.T) {
 
 	// 游戏内名称非法 → 400
 	recorder = testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
-		"username": "fresh", "password": "fresh123", "player_name": "Bad Name!",
+		"username": "fresh", "password": "fresh123", "playerName": "Bad Name!",
 	}, token)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("非法角色名状态码 = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
@@ -119,7 +119,7 @@ func TestAdminCreateUserConflictAndValidation(t *testing.T) {
 
 	// role 显式给空串也算「提交了非法值」，而不是默默用默认身份组
 	recorder = testenv.Do(handler, http.MethodPost, "/api/admin/users", map[string]any{
-		"username": "fresh2", "password": "fresh123", "player_name": "fresh2", "role": "",
+		"username": "fresh2", "password": "fresh123", "playerName": "fresh2", "role": "",
 	}, token)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("空 role 状态码 = %d，想要 400（%s）", recorder.Code, recorder.Body.String())
@@ -337,7 +337,7 @@ func TestGuestIsReadOnly(t *testing.T) {
 		body               any
 	}{
 		{"收藏", http.MethodPost, "/api/items/" + assetID + "/favorite", nil},
-		{"换装", http.MethodPost, "/api/me/equip", map[string]any{"asset_id": assetID}},
+		{"换装", http.MethodPost, "/api/me/equip", map[string]any{"assetId": assetID}},
 		{"上传", http.MethodPost, "/api/skins", map[string]any{}},
 	}
 	for _, call := range writes {
@@ -405,7 +405,7 @@ func TestGuestIsReadOnly(t *testing.T) {
 		t.Fatalf("normal 收藏状态码 = %d，想要 200（%s）", recorder.Code, recorder.Body.String())
 	}
 	if recorder := testenv.Do(handler, http.MethodPost, "/api/me/equip",
-		map[string]any{"asset_id": assetID}, normalToken); recorder.Code != http.StatusOK {
+		map[string]any{"assetId": assetID}, normalToken); recorder.Code != http.StatusOK {
 		t.Fatalf("normal 换装状态码 = %d，想要 200（%s）", recorder.Code, recorder.Body.String())
 	}
 }
@@ -453,7 +453,7 @@ func TestDeletedUserCredentialIsRejected(t *testing.T) {
 	handler := api.NewHandler(instance)
 	token := testenv.Token(t, instance, "steve")
 
-	if recorder := testenv.Do(handler, http.MethodGet, "/api/auth/session", nil, token); recorder.Code != http.StatusOK {
+	if recorder := testenv.Do(handler, http.MethodGet, "/api/auth", nil, token); recorder.Code != http.StatusOK {
 		t.Fatalf("删号前凭据就该有效: %d", recorder.Code)
 	}
 	adminToken := testenv.Token(t, instance, "admin")
@@ -461,7 +461,7 @@ func TestDeletedUserCredentialIsRejected(t *testing.T) {
 	if recorder := testenv.Do(handler, http.MethodDelete, "/api/admin/users/"+playerUUID, nil, adminToken); recorder.Code != http.StatusOK {
 		t.Fatalf("删号失败: %d %s", recorder.Code, recorder.Body.String())
 	}
-	recorder := testenv.Do(handler, http.MethodGet, "/api/auth/session", nil, token)
+	recorder := testenv.Do(handler, http.MethodGet, "/api/auth", nil, token)
 	if recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("删号之后凭据状态码 = %d，想要 401", recorder.Code)
 	}

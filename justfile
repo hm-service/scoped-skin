@@ -100,7 +100,7 @@ clean:
     chmod -R u+w .go-mod-cache 2>/dev/null || true
     rm -rf .go-mod-cache
 
-# 提交并推送：just push "提交信息"（没有改动就只推送，不要求先有提交）
+# 提交并推送：just push "提交信息"
 push message:
     #!/usr/bin/env bash
     set -euo pipefail

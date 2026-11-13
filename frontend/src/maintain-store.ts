@@ -18,7 +18,7 @@ import type { Player, Role, UsersResponse } from "@/types";
 /** 新建表单的草稿。 */
 interface Draft {
   username: string;
-  player_name: string;
+  playerName: string;
   password: string;
   role: Role;
   uuid: string;
@@ -28,7 +28,7 @@ interface Draft {
 interface Editing {
   uuid: string;
   username: string;
-  player_name: string;
+  playerName: string;
   role: Role;
   password: string;
   original: { uuid: string; username: string };
@@ -47,7 +47,7 @@ interface MaintainState {
   toast: { message: string; kind: ToastKind; visible: boolean };
 }
 
-const emptyDraft = (): Draft => ({ username: "", player_name: "", password: "", role: "normal", uuid: "" });
+const emptyDraft = (): Draft => ({ username: "", playerName: "", password: "", role: "normal", uuid: "" });
 
 /** 与 core 的规则保持一致：游戏内名称 ^[A-Za-z0-9_]{3,16}$、UUID 32 位十六进制（可带横线）。
  *  前端先拦一道只是为了不用等一次往返，真正的闸门仍在后端。 */
@@ -61,10 +61,10 @@ const MAX_PASSWORD_LENGTH = 64;
 const UUID_PATTERN = /^(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
 
 /** 校验一组账号字段；返回错误文案，通过则返回空串。密码留空表示不改（编辑时）。 */
-function validateAccount({ username, player_name, uuid, password }: Omit<Draft, "role">): string {
+function validateAccount({ username, playerName, uuid, password }: Omit<Draft, "role">): string {
   if ([...username].length > MAX_USERNAME_LENGTH) return t("valid.username-long");
   if (!USERNAME_PATTERN.test(username)) return t("valid.username");
-  if (!PLAYER_NAME_PATTERN.test(player_name)) return t("valid.player-name");
+  if (!PLAYER_NAME_PATTERN.test(playerName)) return t("valid.player-name");
   if (uuid && !UUID_PATTERN.test(uuid)) return t("valid.uuid");
   if (password) {
     const length = [...password].length;
@@ -86,7 +86,7 @@ function createStore() {
     saving: false,
     draft: emptyDraft(), // 新建表单的值
     draftOpen: false, // 新建弹层开着没有（入口在账号列表末尾那一行）
-    editing: null, // { uuid, username, player_name, role, password, original }
+    editing: null, // { uuid, username, playerName, role, password, original }
     toast: { message: "", kind: "info", visible: false },
   });
 
@@ -163,13 +163,13 @@ function createStore() {
 
   async function create(): Promise<void> {
     const draft = state.draft;
-    if (!draft.username.trim() || !draft.player_name.trim() || !draft.password) {
+    if (!draft.username.trim() || !draft.playerName.trim() || !draft.password) {
       toastError(t("user.create-empty"));
       return;
     }
     const invalid = validateAccount({
       username: draft.username.trim(),
-      player_name: draft.player_name.trim(),
+      playerName: draft.playerName.trim(),
       uuid: draft.uuid.trim(),
       password: draft.password,
     });
@@ -184,7 +184,7 @@ function createStore() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           username: draft.username.trim(),
-          player_name: draft.player_name.trim(),
+          playerName: draft.playerName.trim(),
           password: draft.password,
           role: draft.role,
           uuid: canonicalUuid(draft.uuid), // 空串 = 让后端按离线规则推导
@@ -194,7 +194,7 @@ function createStore() {
       state.draft = emptyDraft();
       state.draftOpen = false;
       // 新建接口必回 user（api/site_admin.go 的 snapshot），断言一下省得层层判空
-      toast(t("user.created", { name: payload.user!.player_name }));
+      toast(t("user.created", { name: payload.user!.playerName }));
     } catch (error) {
       fail(error);
     } finally {
@@ -206,7 +206,7 @@ function createStore() {
     state.editing = {
       uuid: user.uuid,
       username: user.username,
-      player_name: user.player_name,
+      playerName: user.playerName,
       role: user.role,
       password: "",
       original: { uuid: user.uuid, username: user.username },
@@ -220,13 +220,13 @@ function createStore() {
   async function saveEdit(): Promise<void> {
     const editing = state.editing;
     if (!editing) return;
-    if (!editing.username.trim() || !editing.player_name.trim()) {
+    if (!editing.username.trim() || !editing.playerName.trim()) {
       toastError(t("user.edit-empty"));
       return;
     }
     const invalid = validateAccount({
       username: editing.username.trim(),
-      player_name: editing.player_name.trim(),
+      playerName: editing.playerName.trim(),
       uuid: editing.uuid.trim(),
       password: editing.password,
     });
@@ -249,7 +249,7 @@ function createStore() {
         body: JSON.stringify({
           uuid: canonicalUuid(editing.uuid),
           username: editing.username.trim(),
-          player_name: editing.player_name.trim(),
+          playerName: editing.playerName.trim(),
           role: editing.role,
           ...(editing.password ? { password: editing.password } : {}),
         }),
@@ -275,10 +275,10 @@ function createStore() {
   }
 
   async function remove(user: Player): Promise<void> {
-    if (!confirm(t("user.delete-confirm", { name: user.player_name }))) return;
+    if (!confirm(t("user.delete-confirm", { name: user.playerName }))) return;
     try {
       applySnapshot(await api<UsersResponse>(`/api/admin/users/${user.uuid}`, { method: "DELETE" }));
-      toast(t("user.deleted", { name: user.player_name }));
+      toast(t("user.deleted", { name: user.playerName }));
     } catch (error) {
       fail(error);
     }

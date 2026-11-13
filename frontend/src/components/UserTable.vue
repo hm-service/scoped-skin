@@ -22,7 +22,7 @@ const store = maintainStore;
         <tr v-for="user in store.state.users" :key="user.uuid"
             :class="{ self: store.isSelf(user) }">
           <td>
-            <span class="m-name">{{ user.player_name }}</span>
+            <span class="m-name">{{ user.playerName }}</span>
             <span v-if="store.isSelf(user)" class="m-self-flag">{{ t("user.me") }}</span>
           </td>
           <td>{{ user.username }}</td>

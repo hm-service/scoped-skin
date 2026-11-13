@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 登录页（/auth）根组件：POST /api/auth/login 拿 token，存进 localStorage 后回首页。
+ * 登录页（/auth）根组件：POST /api/auth 拿 token，存进 localStorage 后回首页。
  */
 import { onMounted, reactive, ref } from "vue";
 
@@ -23,7 +23,7 @@ async function submit(): Promise<void> {
   busy.value = true;
   error.value = "";
   try {
-  const response = await fetch("/api/auth/login", {
+  const response = await fetch("/api/auth", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Accept-Language": getLocale() },
     body: JSON.stringify({ username, password: form.password }),

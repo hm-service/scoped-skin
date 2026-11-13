@@ -31,7 +31,7 @@ onMounted(() => maintainStore.load());
       </a>
       <span class="chip">{{ t("maintain.count", { count: store.state.users.length }) }}</span>
       <span v-if="store.me" class="chip chip-user" :title="'UUID ' + store.me.uuid">
-        {{ store.me.player_name }} · {{ store.roleLabel(store.me.role) }}
+        {{ store.me.playerName }} · {{ store.roleLabel(store.me.role) }}
       </span>
       <LocaleSwitch/>
       <button class="icon-btn" type="button" :title="t('nav.signout')" @click="store.logout()">

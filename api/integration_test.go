@@ -34,7 +34,7 @@ func TestAdminCredentialChangeKillsYggdrasilSession(t *testing.T) {
 
 	// 2. 浏览器侧也拿一个站点 token
 	siteToken := testenv.Token(t, instance, "steve")
-	if recorder := testenv.Do(handler, http.MethodGet, "/api/auth/session", nil, siteToken); recorder.Code != http.StatusOK {
+	if recorder := testenv.Do(handler, http.MethodGet, "/api/auth", nil, siteToken); recorder.Code != http.StatusOK {
 		t.Fatalf("站点 token 一开始就该有效: %d", recorder.Code)
 	}
 
@@ -47,7 +47,7 @@ func TestAdminCredentialChangeKillsYggdrasilSession(t *testing.T) {
 	}
 
 	// 4. 站点凭据是无状态的（自带过期时间、签名认 uuid）：改凭据不会让它立刻失效
-	if recorder := testenv.Do(handler, http.MethodGet, "/api/auth/session", nil, siteToken); recorder.Code != http.StatusOK {
+	if recorder := testenv.Do(handler, http.MethodGet, "/api/auth", nil, siteToken); recorder.Code != http.StatusOK {
 		t.Fatalf("站点凭据应当有效到过期，实际 %d", recorder.Code)
 	}
 	// 5. Yggdrasil 的内存会话也被清掉

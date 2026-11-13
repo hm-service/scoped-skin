@@ -22,7 +22,7 @@
 | READYZ_TOKEN           | 空（不校验）           | `/readyz` 的 `?token=` 门槛（Secret），见 [3.2](#32-readyz) |
 | SESSION_SIGNING_KEY    | 空（随机生成一把）     | 站点凭据的签名密钥（Secret）；留空则本次进程随机生成，重启即全体失效 |
 | MAX_API_CONCURRENCY    | `128`                  | 其余 `/api/*`（含贴图字节）的同时处理上限                  |
-| MAX_AUTH_CONCURRENCY   | `32`                   | 认证接口 `/api/auth/*` 的同时处理上限                      |
+| MAX_AUTH_CONCURRENCY   | `32`                   | 认证接口 `/api/auth` 的同时处理上限                        |
 | MAX_STATIC_CONCURRENCY | `64`                   | 静态页面与 `/assets/*` 的同时处理上限                      |
 | GOMEMLIMIT             | 不设（Go 自己决定）    | Go 的 GC 软上限；由 Go 运行时解析，应用不校验              |
 
@@ -199,14 +199,14 @@ flowchart LR
 
 | 方法   | 路径                             | 鉴权         | 描述                                                                                 |
 | ------ | -------------------------------- | ------------ | ------------------------------------------------------------------------------------ |
-| POST   | `/api/auth/login`                | 公开         | 账号密码换 token                                                                     |
-| GET    | `/api/auth/session`              | Bearer       | 校验 token 是否有效，返回当前账号                                                    |
+| POST   | `/api/auth`                      | 公开         | 账号密码换 token                                                                     |
+| GET    | `/api/auth`                      | Bearer       | 校验 token 是否有效，返回当前账号                                                    |
 | GET    | `/api/tags`                      | Bearer       | 库里已有标签 + 使用次数                                                              |
 | GET    | `/api/library`                   | Bearer       | 列表（`category` / `tab` / `q`）+ 统计                                               |
 | POST   | `/api/precheck`                  | Bearer       | 上传前预检：请求体 `{kind, data}`（`data` 是原图 base64），服务端校验并算 `asset_id` |
 | POST   | `/api/skins`                     | Bearer       | 上传贴图（multipart：`file` / `kind` / `tags`），或覆盖已有贴图的标签与 kind         |
 | POST   | `/api/items/{asset_id}/favorite` | Bearer       | 切换收藏                                                                             |
-| GET    | `/api/items/{asset_id}/users`    | Bearer admin | 谁在穿这张贴图（删除前提示用）：`[{uuid, player_name, slot}]`                        |
+| GET    | `/api/items/{asset_id}/users`    | Bearer admin | 谁在穿这张贴图（删除前提示用）：`[{uuid, playerName, slot}]`                        |
 | DELETE | `/api/items/{asset_id}`          | Bearer       | 删除贴图（只读资源不可删，会清掉使用者的装备）                                       |
 | GET    | `/api/me`                        | Bearer       | 当前账号 + 装备中的皮肤 / 披风                                                       |
 | POST   | `/api/me/equip`                  | Bearer       | 装备某个贴图                                                                         |
@@ -215,7 +215,7 @@ flowchart LR
 | PATCH  | `/api/admin/users/{uuid}`        | Bearer admin | 改 UUID / 账号名 / 密码 / 游戏内名称 / 身份组                                        |
 | DELETE | `/api/admin/users/{uuid}`        | Bearer admin | 删除账号                                                                             |
 
-贴图条目（asset）的统一字段：`id`（= 规范化后字节的 sha256，见 [4.2 表：asset](#42-表asset)）、`kind`（`skin.steve` / `skin.alex` / `cape`，模型已并进这一列）、`category`（由 `kind` 推出的粗分类 `skin` / `cape`，列表筛选与前端分类用它）、`tags`、`upload_at`、`readonly`、`width`、`height`、`size`、`favorite`、`texture_url`（= `/api/assets/{id}`）。
+贴图条目（asset）的统一字段：`id`（= 规范化后字节的 sha256，见 [4.2 表：asset](#42-表asset)）、`kind`（`skin.steve` / `skin.alex` / `cape`，模型已并进这一列）、`category`（由 `kind` 推出的粗分类 `skin` / `cape`，列表筛选与前端分类用它）、`tags`、`uploadAt`、`readonly`、`width`、`height`、`size`、`favorite`、`textureUrl`（= `/api/assets/{id}`）。
 
 列表的 `q` 是模糊搜索：按空白切成多个查询词，每个词都要**子串命中**条目的某个标签（大小写不敏感，取交集）。排序先看命中档位 —— 前缀 → 中缀 → 后缀；一个词命中多个标签取最好那档，多个查询词取最差那档，同档才按上传时间倒序。
 
@@ -378,7 +378,7 @@ flowchart LR
 
 - **恒定请求时间**：无论账号存在与否、密码对错，账号验证都至少等待 1 秒（再加 0~200ms 抖动）才返回，用来抹掉「不存在的账号秒回」这个时序侧信道，也顺带把单客户端的请求频率压到 60 次/分钟以下；
 - **Argon2id 并发上限**：同时进行的校验最多 4 个（`app.ArgonConcurrency`）。每次校验要吃 19 MiB，不限并发即等于放弃内存上限（实测 30 并发会把常驻内存从 18 MiB 抬到 513 MiB）；
-- **请求并发上限**：按路由组各一个独立闸门，各用一份槽位、互不排队（超出的在闸门外等，客户端断开即直接放行）。`/api/auth/*` 吃 `MAX_AUTH_CONCURRENCY`（默认 `32`）—— 认证被打满不该把业务请求挤在后面；其余 `/api/*`（含贴图字节）吃 `MAX_API_CONCURRENCY`（默认 `128`），避免 goroutine / SQLite / Argon2 同时被放开；静态那一半（页面与 `/assets/*`）吃 `MAX_STATIC_CONCURRENCY`（默认 `64`），只防止一次页面加载把内嵌文件同时读爆；`/readyz` 固定 4 个槽位（它要碰库与文件，且只该由本机监控调用）；`/livez` 不设闸门 —— 只要进程还活着就必须能回 `200`；
+- **请求并发上限**：按路由组各一个独立闸门，各用一份槽位、互不排队（超出的在闸门外等，客户端断开即直接放行）。`/api/auth` 吃 `MAX_AUTH_CONCURRENCY`（默认 `32`）—— 认证被打满不该把业务请求挤在后面；其余 `/api/*`（含贴图字节）吃 `MAX_API_CONCURRENCY`（默认 `128`），避免 goroutine / SQLite / Argon2 同时被放开；静态那一半（页面与 `/assets/*`）吃 `MAX_STATIC_CONCURRENCY`（默认 `64`），只防止一次页面加载把内嵌文件同时读爆；`/readyz` 固定 4 个槽位（它要碰库与文件，且只该由本机监控调用）；`/livez` 不设闸门 —— 只要进程还活着就必须能回 `200`；
 - **安全响应头**：所有响应都带 `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`X-Frame-Options: DENY` 与 `Content-Security-Policy`：`default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'` —— 入口 HTML 只有构建期产出的外部 module 脚本（没有内联脚本），贴图预览要用 `blob:` 交给 `<img>`，所以只放行 `'self'` 再加 `data:` / `blob:`；
 - **频率上限**：应用侧不做限流，由反向代理承担 —— 站点登录建议 `5r/m`，上传与 `authenticate` 建议 `30r/m`，并配 `limit_conn`；应用自身只保证上面那几个并发上限。
 
@@ -443,7 +443,7 @@ flowchart LR
 ```mermaid
 flowchart TD
   open["打开 / 或 /maintain"] --> has{"localStorage 里有 token？"}
-  has -->|没有| login["/auth：POST /api/auth/login<br/>Argon2id 至少 1 秒"]
+  has -->|没有| login["/auth：POST /api/auth<br/>Argon2id 至少 1 秒"]
   has -->|有| req["每个请求带<br/>Authorization: Bearer + Accept-Language"]
   login -->|"成功：token 与 player 存 localStorage"| req
   login -->|失败| audit["审计：login 与写操作"]

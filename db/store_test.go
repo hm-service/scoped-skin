@@ -464,8 +464,7 @@ func TestCreateUserWithUUID(t *testing.T) {
 	}
 
 	_, err = store.CreateUserWithUUID("clash@example.com", "hunter2x", "ClashUuid", "normal", explicit)
-	var conflict *core.ConflictError
-	if !errors.As(err, &conflict) {
+	if _, ok := errors.AsType[*core.ConflictError](err); !ok {
 		t.Fatalf("uuid 撞车应当是冲突: %v", err)
 	}
 }

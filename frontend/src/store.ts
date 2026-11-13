@@ -68,7 +68,7 @@ const thumbnails = new Map<string, Promise<HTMLImageElement>>();
 const pendingImage = ref<PendingImage>(null); // 上传表单里那张待上传的图（留给 2D 预览画）
 
 export function thumbnailFor(item: Item): Promise<HTMLImageElement> {
-  if (!thumbnails.has(item.id)) thumbnails.set(item.id, loadImage(item.texture_url));
+  if (!thumbnails.has(item.id)) thumbnails.set(item.id, loadImage(item.textureUrl));
   return thumbnails.get(item.id) as Promise<HTMLImageElement>;
 }
 
@@ -100,7 +100,7 @@ function toBase64(bytes: Uint8Array): string {
 /**
  * 选中文件后读一次，转成 base64 交给后端。
  *
- * 前端不再自己算 sha256：入库的是重新编码过的字节，asset_id 只有服务端算得出来
+ * 前端不再自己算 sha256：入库的是重新编码过的字节，assetId 只有服务端算得出来
  * （预检会把它回给我们，界面上显示的就是这个 ID）。
  */
 async function readFile(file: File): Promise<{ base64: string }> {
@@ -163,7 +163,7 @@ interface StoreState {
 
 /** 右侧 3D 舞台正在展示的皮肤（接口要的形状）。 */
 export interface StageSkin {
-  texture_url: string;
+  textureUrl: string;
   kind: Kind;
 }
 
@@ -241,13 +241,13 @@ function createStore() {
   const stageSkin = computed<StageSkin | null>(() => {
     const url = pendingUrl.value;
     if (url && state.category === "skin") {
-      return { texture_url: url, kind: pendingKind.value };
+      return { textureUrl: url, kind: pendingKind.value };
     }
     const item = hovered.value;
     if (item && item.category === "skin") {
-      return { texture_url: item.texture_url, kind: item.kind };
+      return { textureUrl: item.textureUrl, kind: item.kind };
     }
-    return state.skin ? { texture_url: state.skin.texture_url, kind: state.skin.kind } : null;
+    return state.skin ? { textureUrl: state.skin.textureUrl, kind: state.skin.kind } : null;
   });
 
   /** 背面材质的贴图（披风与鞘翅共用同一张）：挑过就带上，显示哪一档由 backEquipment 定。 */
@@ -255,8 +255,8 @@ function createStore() {
     const url = pendingUrl.value;
     if (url && state.category === "cape") return url;
     const item = hovered.value;
-    if (item && item.category === "cape") return item.texture_url;
-    return state.cape ? state.cape.texture_url : null;
+    if (item && item.category === "cape") return item.textureUrl;
+    return state.cape ? state.cape.textureUrl : null;
   });
 
   /**
@@ -443,7 +443,7 @@ function createStore() {
       const me = await api<MeResponse>("/api/me/equip", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ asset_id: item.id }),
+        body: JSON.stringify({ assetId: item.id }),
       });
       state.equipped = { skin: me.skin, cape: me.cape };
     } catch (error) {
@@ -497,7 +497,7 @@ function createStore() {
     const prompt = wearers.length
       ? t("asset.delete-in-use", {
           count: wearers.length,
-          names: wearers.map((user) => user.player_name).join("、"),
+          names: wearers.map((user) => user.playerName).join("、"),
         })
       : t("confirm.delete", { noun });
     if (!confirm(prompt)) return false;
@@ -593,14 +593,14 @@ function createStore() {
 
   /* ── 上传 ────────────────────────────────────────────────────── */
 
-  // 预检把原图（base64）交给后端：尺寸、能不能解码、asset_id 都由它自己算
+  // 预检把原图（base64）交给后端：尺寸、能不能解码、assetId 都由它自己算
   async function lookupRegistered(data: string): Promise<{ id: string; item: Item | null }> {
     const payload = await api<PrecheckResponse>("/api/precheck", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind: pendingKind.value, data }),
     });
-    return { id: payload.asset_id, item: payload.exists ? payload.item : null };
+    return { id: payload.assetId, item: payload.exists ? payload.item : null };
   }
 
   function addTag(tag: string): void {
@@ -737,7 +737,7 @@ function createStore() {
     }
     let file: File;
     try {
-      const response = await fetch(item.texture_url);
+      const response = await fetch(item.textureUrl);
       if (!response.ok) throw new Error(t("error.request", { status: response.status }));
       const blob = await response.blob();
       file = new File([blob], `${shortId(item).slice(1)}.png`, { type: "image/png" });
@@ -801,7 +801,7 @@ function createStore() {
       toast(item.updated ? t("upload.tags-updated") : t("upload.success"));
       clearPendingFile();
       await loadTags();
-      thumbnails.set(item.id, loadImage(item.texture_url));
+      thumbnails.set(item.id, loadImage(item.textureUrl));
       await setTab("all");
       state.category = category;
       await refresh();

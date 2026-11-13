@@ -52,7 +52,7 @@ func (s *Server) handleEquip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var payload struct {
-		AssetID string `json:"asset_id"`
+		AssetID string `json:"assetId"`
 	}
 	if !decodeJSON(w, r, &payload) {
 		return

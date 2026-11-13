@@ -73,7 +73,7 @@ func Open(path string) (*Store, error) {
 	if err := createPrivateFile(path); err != nil {
 		return nil, err
 	}
-	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)"
+	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)&_pragma=busy_timeout(5000)"
 	handle, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
